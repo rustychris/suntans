@@ -206,7 +206,7 @@ void AllocateSediment(gridT *grid, int myproc) {
  * here assume Erosion and Deposition initial value is 0, may have error
  */
 void InitializeSediment(gridT *grid, physT *phys, propT *prop,  int myproc) { 
-  int i,j,k;
+  int i,j,k,ne;
   REAL *stmp,z;
   FILE *InitSedimentFID;
   char str[BUFFERLENGTH], filename[BUFFERLENGTH];
@@ -221,9 +221,11 @@ void InitializeSediment(gridT *grid, physT *phys, propT *prop,  int myproc) {
       sediments->Ws[i][j][grid->Nk[j]]=0;
     }
 
-    for(j=0;j<(grid->edgedist[5]-grid->edgedist[2]);j++)
-      for(k=0;k<grid->Nke[j];k++)
+    for(j=0;j<(grid->edgedist[5]-grid->edgedist[2]);j++) {
+      ne=grid->edgep[j+grid->edgedist[2]]; 
+      for(k=0;k<grid->Nke[ne];k++)
         sediments->boundary_sediC[i][j][k]=0; // boundary_sediC will be set using BoundaryScalars function  
+    }
   }
   
   for(i=0;i<grid->Nc;i++) {
