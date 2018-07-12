@@ -801,7 +801,8 @@ static int GetProfileVariables(void) {
     return 0;
 
   if(!strcmp(ProfileVariables,"none")) {
-    sprintf(ProfileVariables,"");
+    // sprintf(ProfileVariables,"");
+    ProfileVariables[0]='\0';
     return 0;
   } else if(!strcmp(ProfileVariables,"all")) {
     sprintf(ProfileVariables,"%s",ALLPROFILEVARIABLES);

@@ -10,6 +10,9 @@
  *
  */
 #include<math.h>
+#define _XOPEN_SOURCE /* for strptime */
+#define __USE_XOPEN
+#include <time.h> /* strptime */
 #include "grid.h"
 #include "util.h"
 

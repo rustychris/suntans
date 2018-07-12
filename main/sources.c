@@ -1,3 +1,4 @@
+
 /*
  * File: sources.c
  * Author: Oliver B. Fringer
@@ -524,6 +525,7 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
 void InitSponge(gridT *grid, int myproc) {
   int Nb, p1, p2, mark, g1, g2;
   int j, n, NeAll, NpAll;
+  int fs_count;
   REAL *xb, *yb, *xp, *yp, r2;
   char str[BUFFERLENGTH];
   FILE *ifile;
@@ -548,7 +550,12 @@ void InitSponge(gridT *grid, int myproc) {
   ifile = MPI_FOpen(EDGEFILE,"r","InitSponge",myproc);
   Nb = 0;
   for(j=0;j<NeAll;j++) {
-    fscanf(ifile, "%d %d %d %d %d",&p1,&p2,&mark,&g1,&g2);
+    fs_count=fscanf(ifile, "%d %d %d %d %d",&p1,&p2,&mark,&g1,&g2);
+    if(fs_count!=5) {
+      printf("Error reading %s.  Early end of file?\n",EDGEFILE);
+      MPI_Finalize();
+      exit(EXIT_FAILURE);
+    }
     if(mark==2 || mark==3)
       Nb++;
   }
@@ -560,7 +567,7 @@ void InitSponge(gridT *grid, int myproc) {
   n=0;
   ifile = MPI_FOpen(EDGEFILE,"r","InitSponge",myproc);
   for(j=0;j<NeAll;j++) {
-    fscanf(ifile, "%d %d %d %d %d",&p1,&p2,&mark,&g1,&g2);
+    fs_count=fscanf(ifile, "%d %d %d %d %d",&p1,&p2,&mark,&g1,&g2);
     if(mark==2 || mark==3) {
       xb[n]=0.5*(xp[p1]+xp[p2]);
       yb[n]=0.5*(yp[p1]+yp[p2]);
@@ -577,7 +584,7 @@ void InitSponge(gridT *grid, int myproc) {
     for(n=0;n<Nb;n++) {
       r2=pow(xb[n]-grid->xe[j],2)+pow(yb[n]-grid->ye[j],2);
       if(r2<rSponge[j])
-	rSponge[j]=r2;
+        rSponge[j]=r2;
     }
     rSponge[j]=sqrt(rSponge[j]);
     //    printf("Processor %d: rSponge[%d]=%f\n",myproc,j,rSponge[j]);

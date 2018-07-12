@@ -51,32 +51,33 @@ static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, 
  *
  */
 int MPI_NCOpen(char *file, int perms, char *caller, int myproc) {
-    extern int errno;
-    int ncid;
-    int retval;
-    char str[BUFFERLENGTH];
-    
-    if (perms==NC_NOWRITE){
-      // Just open the file for read access
-      if ( (VERBOSE>1) && (myproc==0) ) printf("Opening netcdf file: %s\n",file) ;
-       if ((retval = nc_open(file,perms, &ncid)))
-		ERR(retval);
-    } else {
-      // Create a new netcdf dataset
-      if (VERBOSE>1) printf("Creating netcdf file: %s\n",file) ;
-	if ((retval = nc_create(file,perms, &ncid)))
-		ERR(retval);
-    }
-    if (retval){
-      sprintf(str,"Error in Function %s while trying to open %s ",caller,file);
-      sprintf("Error: %s\n", nc_strerror(retval));
-      MPI_Finalize();
-      exit(EXIT_FAILURE);
-    } else {
-	//if ( (VERBOSE>2) ) printf("Successfully opened file: %s on processor %d \n",file,myproc) ;
-      return ncid;
-    }
+  extern int errno;
+  int ncid;
+  int retval;
+  char str[BUFFERLENGTH];
+
+  if (perms==NC_NOWRITE){
+    // Just open the file for read access
+    if ( (VERBOSE>1) && (myproc==0) ) printf("Opening netcdf file: %s\n",file) ;
+    if ((retval = nc_open(file,perms, &ncid)))
+      ERR(retval);
+  } else {
+    // Create a new netcdf dataset
+    if (VERBOSE>1) printf("Creating netcdf file: %s\n",file) ;
+    if ((retval = nc_create(file,perms, &ncid)))
+      ERR(retval);
   }
+  if (retval){
+    printf("Error in Function %s while trying to open %s ",caller,file);
+    printf("Error: %s\n", nc_strerror(retval));
+    MPI_Finalize();
+    exit(EXIT_FAILURE);
+  } else {
+    //if ( (VERBOSE>2) ) printf("Successfully opened file: %s on processor %d \n",file,myproc) ;
+    return ncid;
+  }
+}
+
 /*
  * Function: MPI_NCClose(int ncid)
  * -------------------------------

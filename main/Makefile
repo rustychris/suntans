@@ -59,10 +59,12 @@ else
 endif
 
 ifneq ($(NETCDF4HOME),)
-  NETCDFLIBDIR=-L$(NETCDF4HOME)/lib
-  NETCDFINCLUDE=-I$(NETCDF4HOME)/include
-  NETCDFLD=-lnetcdf
-  NETCDFDEF = -DUSENETCDF
+  # optionally set, so that Makefile.in can specify exact paths as
+  # needed
+  NETCDFLIBDIR?=-L$(NETCDF4HOME)/lib
+  NETCDFINCLUDE?=-I$(NETCDF4HOME)/include
+  NETCDFLD?=-lnetcdf
+  NETCDFDEF= -DUSENETCDF
   NETCDFSRC= mynetcdf.c
 else
   NETCDFLIBDIR = 
