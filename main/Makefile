@@ -15,16 +15,18 @@ ifneq ($(MPIHOME),)
   # For the SGI Altix
   # CC = icc
   CC = $(MPIHOME)/bin/mpicc
+  CXX = $(MPIHOME)/bin/mpicxx
   MPIFILE = 
   MPIDEF = 
 else
   CC = gcc
+	CXX =	g++
   MPIFILE = no-mpi.c
   MPIDEF = -DNOMPI
 endif
-OPTFLAGS = -O2
-#OPTFLAGS = -O2 -mavx -xHost -ipo -static 
-#OPTFLAGS = -O0 -g
+#OPTFLAGS = -O2
+#OPTFLAGS = -O2 -mavx -xHost -ipo -static
+OPTFLAGS = -O0 -g
 
 XLDFLAGS=-lX11 -lm
 XINC=/usr/include
@@ -42,18 +44,23 @@ else
   TRIANGLELIBDIR =
   TRIANGLELD =
   TRIANGLESRC = triangulate-notriangle.c
-endif	
+endif
+
+PARMETISHOME=$(CURDIR)/ext/ParMetis-3.1.1
+
+print-%:
+	@echo '$*=$($*)'
 
 ifneq ($(PARMETISHOME),)
   PARMETISINCLUDE = -I$(PARMETISHOME)/ParMETISLib
   PARMETISLIB = $(PARMETISHOME)/libparmetis.a $(PARMETISHOME)/libmetis.a
   PARMETISLIBDIR = -L$(PARMETISHOME)
-  PARMETISLD = -lparmetis -lmetis 
+  PARMETISLD = -lparmetis -lmetis
   PARMETISSRC = partition.c
 else
-  PARMETISINCLUDE =
+  PARMETISINCLUDE = 
   PARMETISLIB =
-  PARMETISLIBDIR =
+  PARMETISLIBDIR = 
   PARMETISLD =
   PARMETISSRC = partition-noparmetis.c
 endif
@@ -106,7 +113,16 @@ JOINOBJS = $(JOINSRCS:.c=.o)
 
 all:	$(EXEC)
 
-.c.o:	
+config.vars: FORCE
+	echo "MPIHOME='$(MPIHOME)'" > config.vars
+	echo "PARMETISHOME='$(PARMETISHOME)'" >> config.vars
+	echo "TRIANGLEHOME='$(TRIANGLEHOME)'" >> config.vars
+	echo "NETCDF4HOME='$(NETCDF4HOME)'" >> config.vars
+	echo "NETCDFLIBDIR='$(NETCDFLIBDIR)'" >> config.vars
+	echo "NETCDFLD='$(NETCDFLD)'" >> config.vars
+	echo "NETCDFINCLUDE='$(NETCDFINCLUDE)'" >> config.vars
+
+.c.o:
 	$(CC) $(CFLAGS) -c $*.c
 
 $(EXEC): $(OBJS) 
@@ -118,8 +134,38 @@ $(PEXEC): $(PLOTOBJS)
 $(JEXEC): $(JOINOBJS)
 	$(LD) -o sunjoin $(JOINOBJS) $(LDFLAGS)
 
-depend: 
+ifeq ($(PARMETISHOME),$(CURDIR)/ext/ParMetis-3.1.1)
+# VERSION 3 -- for now use default compiler settings
+PARMETIS_URL=http://glaros.dtc.umn.edu/gkhome/fetch/sw/parmetis/OLD/ParMetis-3.1.1.tar.gz
+ext/ParMetis-3.1.1.tar.gz:
+	wget -O $@ $(PARMETIS_URL)
+
+# --no-print-directory is an obscure workaround for an issue with calling
+# sub-makes.  It solves the 'no rule to make target w' problem.
+parmetis: ext/ParMetis-3.1.1/libparmetis.a
+
+ext/ParMetis-3.1.1/libparmetis.a: ext/ParMetis-3.1.1.tar.gz
+	cd ext && tar xzf $(shell basename $<)
+	make --no-print-directory -C ext/ParMetis-3.1.1
+
+clean: clean-parmetis
+
+clean-parmetis:
+	-rm -r ext/ParMetis-3.1.1
+
+$(EXEC): parmetis
+
+$(JEXEC): parmetis
+
+partition.o: parmetis
+
+endif
+
+
+depend:
 	makedepend $(DEPFLAGS) -- $(SRCS) $(PLOTSRCS) &> /dev/null
+
+FORCE:
 
 clean:
 	rm -f *.o

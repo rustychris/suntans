@@ -16,9 +16,14 @@
 # Copyright (C) 2005-2006 The Board of Trustees of the Leland Stanford Junior 
 # University. All Rights Reserved.
 #
-MPIHOME=
-PARMETISHOME=
-TRIANGLEHOME=
-NETCDF4HOME=
+MPIHOME=/usr
+PARMETISHOME=ext/ParMetis-3.1.1
+TRIANGLEHOME=../../triangle
+NETCDF4HOME=/usr
+NETCDFLIBDIR=$(shell $(NETCDF4HOME)/bin/nc-config --libs)
+NETCDFLD=
+NETCDFINCLUDE=$(shell $(NETCDF4HOME)/bin/nc-config --cflags)
+
+
 
 
