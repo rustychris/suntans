@@ -5,7 +5,7 @@
  * --------------------------------
  * This file contains grid-based functions.
  *
- * Copyright (C) 2005-2006 The Board of Trustees of the Leland Stanford Junior 
+ * Copyright (C) 2005-2006 The Board of Trustees of the Leland Stanford Junior
  * University. All Rights Reserved.
  *
  */
@@ -2671,7 +2671,8 @@ static void TransferData(gridT *maingrid, gridT **localgrid, int myproc)
 {
   // allocate memory for all referential pointers and localgrid memory
   int i, j, k, n, nc, nf, ne, ng, flag, mgptr, *lcptr, *leptr, bctype, iface, grad1, grad2, enei;
-  unsigned short *flagged = 
+  member_test tst; // to speed up IsMember
+  unsigned short *flagged =
     (unsigned short *)SunMalloc(maingrid->Ne*sizeof(unsigned short),"TransferData");
 
   // pointers from maingrid to localgrid for cells and edges
@@ -2778,7 +2779,11 @@ static void TransferData(gridT *maingrid, gridT **localgrid, int myproc)
       }
     }
   }
-//  printf("k = %d localgrid->Nc = %d\n", k, (*localgrid)->Nc);
+  //  printf("k = %d localgrid->Nc = %d\n", k, (*localgrid)->Nc);
+
+  // preprocess mnptr to allow fast lookup in this loop, and
+  // avoid O(Nc^2) time
+  tst=IsMember_setup((*localgrid)->mnptr,(*localgrid)->Nc);
 
   // populate localgrid->neigh  (just transfer values)
   // for each cell on the local grid
@@ -2788,18 +2793,21 @@ static void TransferData(gridT *maingrid, gridT **localgrid, int myproc)
       // pointer to gradient neighbor on main cell
       mgptr = maingrid->neigh[(*localgrid)->mnptr[j]*(*localgrid)->maxfaces+nf];
       // if this is not a ghost cell and is on the local grid)
-      if(mgptr>=0 && IsMember(mgptr,(*localgrid)->mnptr,(*localgrid)->Nc)>=0) {
+      // RH: original
+      // if(mgptr>=0 && IsMember(mgptr,(*localgrid)->mnptr,(*localgrid)->Nc)>=0) {
+      // RH: O(log(Nc)) method
+      if(mgptr>=0 && IsMember_fast(mgptr,tst)>=0) {
         // store the local grid neighbor info to the local grid coordinate
         (*localgrid)->neigh[j*(*localgrid)->maxfaces+nf]=lcptr[mgptr];
-      }
-      else {
+      } else {
         // otherwise it is a ghost cell
         (*localgrid)->neigh[j*maingrid->maxfaces+nf]=-1;
       }
     }
   }
+  IsMember_free(tst);
 
-  // compute the number of edges for the local grid including edges 
+  // compute the number of edges for the local grid including edges
   // on a boundary (ghost edges)
 
   // allocate edge data
@@ -2847,10 +2855,9 @@ static void TransferData(gridT *maingrid, gridT **localgrid, int myproc)
         leptr[iface]=k;
         //point from local edge index to global one
         (*localgrid)->eptr[k]=iface;
-	//edge_id array
-	(*localgrid)->edge_id[k]=maingrid->edge_id[iface];
-	k++;
-
+        //edge_id array
+        (*localgrid)->edge_id[k]=maingrid->edge_id[iface];
+        k++;
       }
     }
   }
@@ -2858,23 +2865,24 @@ static void TransferData(gridT *maingrid, gridT **localgrid, int myproc)
 
   // populate localgrid->grad
   // for each cell on the local grid
-  for(i=0;i<(*localgrid)->Nc;i++) {
-    //  for each edge on the local grid
-    for(n=0;n<(*localgrid)->Ne;n++) {
-      for(j=0;j<2;j++) {
-        // initialize all neighbors to voronoi edge to ghost
-        (*localgrid)->grad[2*n+j]=-1;
-        // get voronoi edge neighbors from maingrid 
-        nc = maingrid->grad[2*(*localgrid)->eptr[n]+j];
-        // and if they aren't ghost make the connection between the 
-        // local gradient and the local cell via the global information
-        if(nc != -1)
-          (*localgrid)->grad[2*n+j]=lcptr[nc];
-      }
+  // RH: no need for this outer loop.
+  // for(i=0;i<(*localgrid)->Nc;i++) {
+  //  for each edge on the local grid
+  for(n=0;n<(*localgrid)->Ne;n++) {
+    for(j=0;j<2;j++) {
+      // initialize all neighbors to voronoi edge to ghost
+      (*localgrid)->grad[2*n+j]=-1;
+      // get voronoi edge neighbors from maingrid 
+      nc = maingrid->grad[2*(*localgrid)->eptr[n]+j];
+      // and if they aren't ghost make the connection between the 
+      // local gradient and the local cell via the global information
+      if(nc != -1)
+        (*localgrid)->grad[2*n+j]=lcptr[nc];
     }
-  }  
+  }
+  // RH:  }
 
-  // create face and normal arrays now for the local grid 
+  // create face and normal arrays now for the local grid
   // (previously called for global grid)
   // check whether variables are right
 

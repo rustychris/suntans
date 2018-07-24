@@ -26,6 +26,15 @@ void ReOrderIntArray(int *a, int *order, int *tmp, int N, int Num, int *nfaces, 
 void ReOrderRealArray(REAL *a, int *order, REAL *tmp, int N, int Num, int *nfaces, int *grad, int maxfaces);
 int *ReSize(int *a, int N);
 int IsMember(int i, int *points, int numpoints);
+typedef struct {
+  int N;
+  int *points;
+  int *sorted;
+} member_data;
+typedef member_data *member_test;
+void IsMember_free(member_test);
+member_test IsMember_setup(int *points,int numpoints);
+int IsMember_fast(int i,member_test tst);
 int FindNearest(int *points, REAL *x, REAL *y, int N, int np, REAL xi, REAL yi);
 void Interp(REAL *x, REAL *y, REAL *z, int N, REAL *xi, REAL *yi, REAL *zi, int Ni, int maxFaces);
 void TriSolve(REAL *a, REAL *b, REAL *c, REAL *d, REAL *u, int N);

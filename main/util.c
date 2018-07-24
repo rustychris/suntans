@@ -5,13 +5,15 @@
  * --------------------------------
  * This file contains utility functions for array operations.
  *
- * Copyright (C) 2005-2006 The Board of Trustees of the Leland Stanford Junior 
+ * Copyright (C) 2005-2006 The Board of Trustees of the Leland Stanford Junior
  * University. All Rights Reserved.
  *
  */
 #include<math.h>
 #define _XOPEN_SOURCE /* for strptime */
 #define __USE_XOPEN
+#include <stdio.h> /* sorting */
+#include <stdlib.h>
 #include <time.h> /* strptime */
 #include "grid.h"
 #include "util.h"
@@ -25,7 +27,7 @@ void Sort(int *a, int *v, int N)
     tmp[i] = v[i];
 
   for(i=0;i<N;i++) {
-    for(j=i+1;j<N;j++) 
+    for(j=i+1;j<N;j++)
       if(tmp[j]<tmp[i]) {
         temp = a[j];
         a[j] = a[i];
@@ -35,7 +37,6 @@ void Sort(int *a, int *v, int N)
         tmp[i] = temp;
       }
   }
-
   free(tmp);
 }
 
@@ -131,13 +132,87 @@ void ReOrderIntArray(int *a, int *order, int *tmp, int N, int Num, int *nfaces, 
   }
 }
 
+// comparison function for qsort
+int comp (const void * elem1, const void * elem2)
+{
+  int f = *((int*)elem1);
+  int s = *((int*)elem2);
+  if (f > s) return  1;
+  if (f < s) return -1;
+  return 0;
+}
+
+/* faster IsMember test based on sorted copy of the list */
+member_test IsMember_setup(int *points,int numpoints) {
+  int i;
+
+  member_data *tst=malloc( sizeof(member_data) );
+  tst->N=numpoints;
+  tst->points=points;
+  tst->sorted=malloc( numpoints*sizeof(int) );
+  for(i=0;i<tst->N;i++) {
+    tst->sorted[i]=points[i];
+  }
+
+  printf("Pre-sorting\n");
+  qsort(tst->sorted,tst->N,sizeof(tst->sorted[0]),comp);
+  printf("Done with pre-sorting\n");
+  return (member_test)tst;
+}
+
+void IsMember_free(member_test tst) {
+  tst->points=NULL;
+  tst->N=-1;
+  free(tst->sorted);
+  free(tst);
+}
+
+int IsMember_fast(int i,member_test tst) {
+  int l,r,m;
+  int result=-1;
+
+  l=0;
+  r=tst->N-1;
+
+  // ref: https://www.geeksforgeeks.org/binary-search/
+  // A iterative binary search function. It returns
+  // location of x in given array arr[l..r] if present,
+  // otherwise -1
+  while (l <= r) {
+    m = l + (r-l)/2;
+    if (tst->sorted[m] == i) { // Check if x is present at mid
+      result=m;
+      break;
+    } else if (tst->sorted[m] < i) { // If x greater, ignore left half
+      l = m + 1;
+    } else  { // If x is smaller, ignore right half
+      r = m - 1;
+    }
+  }
+
+  // // while testing:
+  // if ( IsMember(i,tst->points,tst->N)>=0 ) {
+  //   if ( result<0 ) {
+  //     printf("Different answers for IsMember and IsMember_fast!!!\n");
+  //     exit(1);
+  //   }
+  // } else {
+  //   if ( result>=0 ) {
+  //     printf("Also different answers for IsMember and IsMember_fast!!!\n");
+  //     exit(1);
+  //   }
+  // }
+
+  return result;
+}
+
 int IsMember(int i, int *points, int numpoints)
 {
   int j;
   for(j=0;j<numpoints;j++)
     if(i==points[j]) return j;
   return -1;
-}    
+}
 
 void Interp(REAL *x, REAL *y, REAL *z, int N, REAL *xi, REAL *yi, REAL *zi, int Ni, int maxFaces)
 {
