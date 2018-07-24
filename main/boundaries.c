@@ -174,7 +174,7 @@ void BoundaryScalars(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm
  * Usage: BoundaryVelocities(grid,phys,prop);
  * ------------------------------------------
  * This will set the values of u,v,w, and h at the boundaries.
- * 
+ *
  */
 void BoundaryVelocities(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm) {
   int i, ii, j, jj, jind, iptr, jptr, n, k;
@@ -192,7 +192,7 @@ void BoundaryVelocities(gridT *grid, physT *phys, propT *prop, int myproc, MPI_C
    REAL omega = 7.27e-5;
 
    // Update the netcdf boundary data
-   if(prop->netcdfBdy==1){ 
+   if(prop->netcdfBdy==1){
        UpdateBdyNC(prop,grid,myproc,comm);
    }
 
@@ -224,52 +224,52 @@ void BoundaryVelocities(gridT *grid, physT *phys, propT *prop, int myproc, MPI_C
 	}
       }
   }
- 
+
   // Type-3
   if(prop->netcdfBdy){
-      ii=-1;
-      for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
-	i = grid->cellp[iptr];
-	ii+=1;
-	phys->h[i]=bound->h[bound->ind3[ii]]*rampfac;
-      }
+    ii=-1;
+    for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
+      i = grid->cellp[iptr];
+      ii+=1;
+      phys->h[i]=bound->h[bound->ind3[ii]]*rampfac;
+    }
   }else{ // No NetCDF
-     for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
-	i = grid->cellp[iptr];
-	phys->h[i]=0;
-     }
+    for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
+      i = grid->cellp[iptr];
+      phys->h[i]=0;
+    }
   }
 
-// Set velocities in type-3 cells
+  // Set velocities in type-3 cells
   // Try recalculating the cell tops here
   ISendRecvCellData2D(phys->h,grid,myproc,comm);
   UpdateDZ(grid,phys,prop,0);
   if(prop->netcdfBdy){
-      ii=-1;
-      for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
-	i = grid->cellp[iptr];
-	ii+=1;
-	for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-	  phys->uc[i][k]=bound->uc[k][bound->ind3[ii]]*rampfac;
-	  phys->vc[i][k]=bound->vc[k][bound->ind3[ii]]*rampfac;
-	  //phys->wc[i][k]=bound->wc[k][bound->ind3[ii]]*rampfac;
-	}
+    ii=-1;
+    for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
+      i = grid->cellp[iptr];
+      ii+=1;
+      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+        phys->uc[i][k]=bound->uc[k][bound->ind3[ii]]*rampfac;
+        phys->vc[i][k]=bound->vc[k][bound->ind3[ii]]*rampfac;
+        //phys->wc[i][k]=bound->wc[k][bound->ind3[ii]]*rampfac;
       }
+    }
   }else{//No NetCDF
-      for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
-	i = grid->cellp[iptr];
-	for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-	  phys->uc[i][k]=0;
-	  phys->vc[i][k]=0;
-	}
+    for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
+      i = grid->cellp[iptr];
+      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+        phys->uc[i][k]=0;
+        phys->vc[i][k]=0;
       }
+    }
   }
   // Need to communicate the cell data for type 3 boundaries
   ISendRecvCellData3D(phys->uc,grid,myproc,comm);
   ISendRecvCellData3D(phys->vc,grid,myproc,comm);
   //ISendRecvCellData3D(phys->wc,grid,myproc,comm);
 }
-	
+
 /*
  * Function: WindStress
  * Usage: WindStress(grid,phys,prop,myproc);
