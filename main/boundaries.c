@@ -231,7 +231,9 @@ void BoundaryVelocities(gridT *grid, physT *phys, propT *prop, int myproc, MPI_C
     for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
       i = grid->cellp[iptr];
       ii+=1;
-      phys->h[i]=bound->h[bound->ind3[ii]]*rampfac;
+      // RH: 20180724: used to have rampfac here, but since h may have a constant
+      // offset, scaling toward 0 is not a good solution.
+      phys->h[i]=bound->h[bound->ind3[ii]];
     }
   }else{ // No NetCDF
     for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
