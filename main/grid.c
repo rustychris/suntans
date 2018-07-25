@@ -471,34 +471,34 @@ void GetDepth(gridT *grid, int myproc, int numprocs, MPI_Comm comm)
       maxdepth = grid->dv[n];
   maxdepth0 = maxdepth;
 
-  GetDZ(dz,maxdepth,maxdepth,Nkmax,myproc);  
+  GetDZ(dz,maxdepth,maxdepth,Nkmax,myproc);
 
-  //  if(!stairstep && fixdzz) 
+  //  if(!stairstep && fixdzz)
   //    FixDZZ(grid,maxdepth,Nkmax,fixdzz,myproc);
 
   if(minimum_depth!=0) {
     if(minimum_depth>0) {
       printf("Setting minimum depth to %f\n",minimum_depth);
       for(n=0;n<grid->Nc;n++) {
-	if(grid->dv[n]<minimum_depth) {
-	  grid->dv[n]=minimum_depth;
-	  kount++;
-	}
+        if(grid->dv[n]<minimum_depth) {
+          grid->dv[n]=minimum_depth;
+          kount++;
+        }
       }
       if(VERBOSE>0 && myproc==0 && kount>0) 
-	printf("Increased the depth to the minimum set value of %.2f %d times.\n",minimum_depth,kount);
+        printf("Increased the depth to the minimum set value of %.2f %d times.\n",minimum_depth,kount);
     } else if(minimum_depth<0) {
       for(n=0;n<grid->Nc;n++) {
-	if(grid->dv[n]<dz[0]) {
-	  grid->dv[n]=dz[0];
-	  kount++;
-	}
+        if(grid->dv[n]<dz[0]) {
+          grid->dv[n]=dz[0];
+          kount++;
+        }
       }
       if(VERBOSE>0 && myproc==0 && kount>0) 
-	printf("Increased the depth to the minimum set value of dz[0]=%.2f %d times.\n",dz[0],kount);
+        printf("Increased the depth to the minimum set value of dz[0]=%.2f %d times.\n",dz[0],kount);
     }
   }
-  
+
   for(n=0;n<grid->Nc;n++) {
     if(grid->dv[n]>maxdepth)
       maxdepth = grid->dv[n];
