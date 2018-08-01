@@ -567,9 +567,12 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   }else{
     for(i=0;i<Nc;i++) {
       phys->h[i]=ReturnFreeSurface(grid->xv[i],grid->yv[i],grid->dv[i]);
-      if(phys->h[i]<-grid->dv[i] + DRYCELLHEIGHT) 
-	phys->h[i]=-grid->dv[i] + DRYCELLHEIGHT;
     }
+  }
+  // RH now common to netcdf and non-netcdf
+  for(i=0;i<Nc;i++) {
+    if(phys->h[i]<-grid->dv[i] + DRYCELLHEIGHT)
+      phys->h[i]=-grid->dv[i] + DRYCELLHEIGHT;
   }
 
   // Need to update the vertical grid after updating the free surface.
@@ -3014,8 +3017,9 @@ static void UPredictor(gridT *grid, physT *phys,
         (phys->h[nc1]-phys->h[nc2])/grid->dg[j];
 
     // set dry cells (with zero height) to have zero velocity
-    if(grid->etop[j]==grid->Nke[j]-1 && grid->dzz[nc1][grid->etop[j]]==0 &&
-        grid->dzz[nc2][grid->etop[j]]==0) 
+    if( grid->etop[j]==grid->Nke[j]-1 &&
+        grid->dzz[nc1][grid->etop[j]]==0 &&
+        grid->dzz[nc2][grid->etop[j]]==0 ) 
       phys->u[j][grid->etop[j]]=0;
   }
 
@@ -4381,14 +4385,13 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop) {
   }
 
   // assuming central differencing
-  if(grid->smoothbot)
+  if(grid->smoothbot) {
     for(i=0;i<grid->Nc;i++) {
       //if(grid->dzz[i][grid->Nk[i]-1]>grid->dzbot[i])
       //printf("i=%d dzz=%e, dzbot=%e dzsmall=%e\n",i,grid->dzz[i][grid->Nk[i]-1],grid->dzbot[i],dzsmall);
-      grid->dzz[i][grid->Nk[i]-1]=Max(grid->dzbot[i],grid->smoothbot*grid->dz[grid->Nk[i]-1]); 
-
+      grid->dzz[i][grid->Nk[i]-1]=Max(grid->dzbot[i],grid->smoothbot*grid->dz[grid->Nk[i]-1]);
     }
-
+  }
 
   for(j=0;j<grid->Ne;j++) {
     nc1 = grid->grad[2*j];
@@ -4396,11 +4399,13 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop) {
     if(nc1==-1) nc1=nc2;
     if(nc2==-1) nc2=nc1;
 
-    for(k=0;k<grid->etop[j];k++)
+    for(k=0;k<grid->etop[j];k++) {
       grid->dzf[j][k]=0;
-    for(k=grid->etop[j];k<grid->Nke[j];k++) 
-//      grid->dzf[j][k]=UFaceFlux(j,k, grid->dzz, phys->u, grid,prop->dt,prop->nonlinear);
+    }
+    for(k=grid->etop[j];k<grid->Nke[j];k++) {
+      //      grid->dzf[j][k]=UFaceFlux(j,k, grid->dzz, phys->u, grid,prop->dt,prop->nonlinear);
       grid->dzf[j][k]=UpWind(phys->u[j][k],grid->dzz[nc1][k],grid->dzz[nc2][k]);
+    }
 
     k=grid->Nke[j]-1;
     /* This works with Wet/dry but not with cylinder case...*/
@@ -4408,9 +4413,9 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop) {
 //      grid->dzf[j][k]=Max(0,HFaceFlux(j,k,phys->h,phys->u,grid,prop->dt,prop->nonlinear)
 //          +Min(grid->dv[nc1],grid->dv[nc2]));
       grid->dzf[j][k]=Max(0,UpWind(phys->u[j][k],phys->h[nc1],phys->h[nc2])+Min(grid->dv[nc1],grid->dv[nc2]));
-    }
-    else 
+    } else  {
       grid->dzf[j][k]=Min(grid->dzz[nc1][k],grid->dzz[nc2][k]);
+    }
     /*
        if(grid->Nk[nc1]!=grid->Nk[nc2])
        dz_bottom = Min(grid->dzz[nc1][k],grid->dzz[nc2][k]);
@@ -4426,7 +4431,6 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop) {
       if(grid->dzf[j][k]<=DRYCELLHEIGHT)
         grid->dzf[j][k]=0;
   }
-
 
   //set minimum dzz
   if(grid->smoothbot)

@@ -524,6 +524,7 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
    const size_t countone[] = {1};
    const size_t starttwo[] = {prop->nctimectr,0};
    const size_t counttwo[] = {1,grid->Nc};
+   const size_t count_t_Ne[] = {1,grid->Ne};
    size_t startthree[] = {prop->nctimectr,0,0};
    size_t countthree[] = {1,grid->Nkmax,grid->Nc};
    const size_t countthreew[] = {1,grid->Nkmax+1,grid->Nc};
@@ -608,39 +609,44 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
      }
 
      if(prop->calcage>0){ 
-	if ((retval = nc_inq_varid(ncid, "agec", &varid)))
-	  ERR(retval);
-	ravel(age->agec, phys->tmpvar, grid);
-	if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
-	  ERR(retval);
-
-	if ((retval = nc_inq_varid(ncid, "agealpha", &varid)))
-	  ERR(retval);
-	ravel(age->agealpha, phys->tmpvar, grid);
-	if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
-	  ERR(retval);
+       if ((retval = nc_inq_varid(ncid, "agec", &varid)))
+         ERR(retval);
+       ravel(age->agec, phys->tmpvar, grid);
+       if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
+         ERR(retval);
+       
+       if ((retval = nc_inq_varid(ncid, "agealpha", &varid)))
+         ERR(retval);
+       ravel(age->agealpha, phys->tmpvar, grid);
+       if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
+         ERR(retval);
      }
-
+     
      // Vertical grid spacing
      if ((retval = nc_inq_varid(ncid, "dzz", &varid)))
        ERR(retval);
      ravel(grid->dzz, phys->tmpvar, grid);
      if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
        ERR(retval);
-
+     
      countthree[2] = grid->Ne;
      if ((retval = nc_inq_varid(ncid, "dzf", &varid)))
        ERR(retval);
      ravelEdge(grid->dzf, phys->tmpvarE, grid);
      if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvarE )))
-        ERR(retval);
+       ERR(retval);
+
+     if ((retval = nc_inq_varid(ncid, "etop", &varid)))
+       ERR(retval);
+     if ((retval = nc_put_vara_int(ncid, varid, starttwo, count_t_Ne, grid->etop ) ))
+       ERR(retval);
 
      // Edge normal velocity
      if ((retval = nc_inq_varid(ncid, "U", &varid)))
-	ERR(retval);
+       ERR(retval);
      ravelEdge(phys->u, phys->tmpvarE, grid);
      if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvarE )))
-        ERR(retval);
+       ERR(retval);
 
      // Wind variables
      if(prop->metmodel>0){
@@ -1912,28 +1918,37 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
     nc_addattr(ncid, varid,"long_name","z layer spacing at edges");
     nc_addattr(ncid, varid,"units","m");
 
-   
-    
+#ifdef NC_OUT_ETOP
+    // etop
+    dimidtwo[0]=dimid_time;
+    dimidtwo[1]=dimid_Ne;
+    if ((retval = nc_def_var(ncid,"etop",NC_INT,2,dimidtwo,&varid)))
+      ERR(retval);
+    if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
+      ERR(retval);
+    nc_addattr(ncid, varid,"long_name","top active layer at edges");
+#endif // NC_OUT_ETOP
+
     //time
     dimidone[0] = dimid_time;
     if ((retval = nc_def_var(ncid,"time",NC_DOUBLE,1,dimidone,&varid)))
        ERR(retval);
     nc_addattr(ncid, varid,"long_name","time");
-    nc_addattr(ncid, varid,"units","seconds since 1990-01-01 00:00:00");  
+    nc_addattr(ncid, varid,"units","seconds since 1990-01-01 00:00:00");
 
-   /********************************************************************** 
-    * 
-    * Define the physical variables and attributes 
+   /**********************************************************************
+    *
+    * Define the physical variables and attributes
     *
     **********************************************************************/
-   
+
    dimidtwo[0] = dimid_time;
    dimidtwo[1] = dimid_Nc;
-   
+
    dimidthree[0] = dimid_time;
    dimidthree[1] = dimid_Nk;
    dimidthree[2] = dimid_Nc;
-   
+
    // eta
    if ((retval = nc_def_var(ncid,"eta",NC_DOUBLE,2,dimidtwo,&varid)))
       ERR(retval);
@@ -1942,7 +1957,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
    nc_addattr(ncid, varid,"mesh","suntans_mesh");
    nc_addattr(ncid, varid,"location","face");
    nc_addattr(ncid, varid,"coordinates","time yv xv");
-    
+
    //u
    if ((retval = nc_def_var(ncid,"uc",NC_DOUBLE,3,dimidthree,&varid)))
       ERR(retval);
@@ -1958,7 +1973,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
 
    //v
    if ((retval = nc_def_var(ncid,"vc",NC_DOUBLE,3,dimidthree,&varid)))
-     ERR(retval);   
+     ERR(retval);
    if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
       ERR(retval);
    if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
@@ -1968,7 +1983,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
    nc_addattr(ncid, varid,"mesh","suntans_mesh");
    nc_addattr(ncid, varid,"location","face");
    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
-   
+
    //w
    dimidthree[1] = dimid_Nkw;
    if ((retval = nc_def_var(ncid,"w",NC_DOUBLE,3,dimidthree,&varid)))
@@ -1981,10 +1996,10 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
    nc_addattr(ncid, varid,"units","m s-1");
    nc_addattr(ncid, varid,"mesh","suntans_mesh");
    nc_addattr(ncid, varid,"location","face");
-   nc_addattr(ncid, varid,"coordinates","time z_w yv xv");  
+   nc_addattr(ncid, varid,"coordinates","time z_w yv xv");
 
    dimidthree[1] = dimid_Nk;
-   
+
    //nu_v
    if ((retval = nc_def_var(ncid,"nu_v",NC_DOUBLE,3,dimidthree,&varid)))
      ERR(retval); 
@@ -1997,7 +2012,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
    nc_addattr(ncid, varid,"mesh","suntans_mesh");
    nc_addattr(ncid, varid,"location","face");
    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
-   
+
    //salinity
    if(prop->beta>0){
      if ((retval = nc_def_var(ncid,"salt",NC_DOUBLE,3,dimidthree,&varid)))
@@ -2012,7 +2027,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
     nc_addattr(ncid, varid,"location","face");
     nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
    }
-   
+
    //temperature
    if(prop->gamma>0){
      if ((retval = nc_def_var(ncid,"temp",NC_DOUBLE,3,dimidthree,&varid)))
@@ -2027,7 +2042,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
     nc_addattr(ncid, varid,"location","face");
     nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
    }
-   
+
    //rho
    if( (prop->gamma>0) || (prop->beta>0) ){
      if ((retval = nc_def_var(ncid,"rho",NC_DOUBLE,3,dimidthree,&varid)))
@@ -2042,7 +2057,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
     nc_addattr(ncid, varid,"location","face");
     nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
    }
-   
+
    //age
    if(prop->calcage>0){
      if ((retval = nc_def_var(ncid,"agec",NC_DOUBLE,3,dimidthree,&varid)))
@@ -2056,7 +2071,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
     nc_addattr(ncid, varid,"mesh","suntans_mesh");
     nc_addattr(ncid, varid,"location","face");
     nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
-    
+
     if ((retval = nc_def_var(ncid,"agealpha",NC_DOUBLE,3,dimidthree,&varid)))
       ERR(retval);
     if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
@@ -2243,7 +2258,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
 
    //End file definition mode
    if ((retval = nc_enddef(ncid)))
-	ERR(retval);
+     ERR(retval);
 
    
    /**********************************************************
@@ -2285,14 +2300,14 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
    nc_write_double(ncid,"dv",grid->dv,myproc);
 
 
-    // Need to convert the edge array that is stored is NUMEDGECOLUMN*Ne where
-    // NUMEDGECOLUMN=3
-    for(n=0;n<grid->Ne;n++){
-    	for(j=0;j<NUMEDGECOLUMNS-1;j++){
-	    edges[2*n+j] = grid->edges[NUMEDGECOLUMNS*n+j];
-	}
-    }
-    nc_write_int(ncid,"edges",edges,myproc);
+   // Need to convert the edge array that is stored is NUMEDGECOLUMN*Ne where
+   // NUMEDGECOLUMN=3
+   for(n=0;n<grid->Ne;n++){
+     for(j=0;j<NUMEDGECOLUMNS-1;j++){
+       edges[2*n+j] = grid->edges[NUMEDGECOLUMNS*n+j];
+     }
+   }
+   nc_write_int(ncid,"edges",edges,myproc);
 
    // Free the temporary vectors
    //SunFree(z_r,grid->Nkmax*sizeof(REAL),"InitialiseOutputNCugrid");
@@ -5047,8 +5062,10 @@ void ReturnFreeSurfaceNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int 
 
      phys->h[i]=htmp[grid->mnptr[i]];
      //phys->h[i]=0;
-     if(phys->h[i]<-grid->dv[i] + DRYCELLHEIGHT) 
-       phys->h[i]=-grid->dv[i] + DRYCELLHEIGHT;
+     // RH consolidate this in phys.c where this is called, to reduce potential
+     // for differences between netcdf and non-netcdf
+     // if(phys->h[i]<-grid->dv[i] + DRYCELLHEIGHT) 
+     //   phys->h[i]=-grid->dv[i] + DRYCELLHEIGHT;
   }
 } // End function
 

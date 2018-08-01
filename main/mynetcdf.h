@@ -15,6 +15,9 @@
 #define NC_NETCDF4 0
 #endif
 
+// controls whether etop is written to netcdf ugrid at each timestep
+#define NC_OUT_ETOP
+
 #include "suntans.h"
 #include "phys.h"
 #include "grid.h"
