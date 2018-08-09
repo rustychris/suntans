@@ -511,14 +511,14 @@ void GetDepth(gridT *grid, int myproc, int numprocs, MPI_Comm comm)
   if(Nkmax>1) {
     if(mindepth!=maxdepth) 
       for(n=0;n<grid->Nc;n++) {
-	grid->vwgt[n]=(int)(maxgridweight*(float)GetNk(dz,grid->dv[n],Nkmax)/(float)Nkmax);
-	//	grid->vwgt[n] = (int)(maxgridweight*(grid->dv[n]-mindepth)/(maxdepth-mindepth));
+        grid->vwgt[n]=(int)(maxgridweight*(float)GetNk(dz,grid->dv[n],Nkmax)/(float)Nkmax);
+        //	grid->vwgt[n] = (int)(maxgridweight*(grid->dv[n]-mindepth)/(maxdepth-mindepth));
     } else
       for(n=0;n<grid->Nc;n++) 
-	grid->vwgt[n] = maxgridweight;
+        grid->vwgt[n] = maxgridweight;
   } else {
-      for(n=0;n<grid->Nc;n++) 
-	grid->vwgt[n] = Nkmax;
+    for(n=0;n<grid->Nc;n++) 
+      grid->vwgt[n] = Nkmax;
   }
 
   if(VERBOSE>3) 
@@ -3957,6 +3957,7 @@ static void FixDZZ(gridT *grid, REAL maxdepth, int Nkmax, int fixdzz, int myproc
 
         if(fixdzz>0) {
           if(dzz<dz[k]*dzsmall && k>0) {
+
             if(myproc==0 && VERBOSE>2) printf("Fixing small bottom dz of %.2e by increasing the depth from %.2f to %.2f\n",
                 dzz,grid->dv[i],-z+dz[k]*dzsmall);
             kount++;
@@ -3969,7 +3970,7 @@ static void FixDZZ(gridT *grid, REAL maxdepth, int Nkmax, int fixdzz, int myproc
             kount++;
             grid->dv[i]=-z+dzsmall;
           }
-        }	  
+        }
         break;
       }
       z-=dz[k];
