@@ -1,5 +1,4 @@
-
-/*
+/* -*- tab-width: 8 -*-
  * File: boundaries.c
  * Author: Oliver B. Fringer
  * Institution: Stanford University
@@ -141,7 +140,11 @@ void BoundaryScalars(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm
   ISendRecvCellData3D(phys->s,grid,myproc,comm);
 
    // Set the edge array to the value in the boundary array
-  /* ii=-1;
+  /*
+    RH: note that ind3edge is now longer than ind3, and can have more entries
+    than ind3.  Not sure how that affects this code.
+
+    ii=-1;
  int myproc,int myproc,   for(jptr=grid->edgedist[3];jptr<grid->edgedist[4];jptr++) {
     jind = jptr-grid->edgedist[2];
     j = grid->edgep[jptr];
@@ -599,65 +602,64 @@ int isGhostEdge(int j, gridT *grid, int myproc){
  * -------------------------
  * Checks that the boundary arrays match the grid sizes
  */
- static void MatchBndPoints(propT *prop, gridT *grid, int myproc){
- int iptr, jptr, jj, ii, ne, nc1, nc2, nc, j, ib;
+static void MatchBndPoints(propT *prop, gridT *grid, int myproc){
+  int iptr, jptr, jj, ii, ne, nc1, nc2, nc, j, ib;
 
+  if(myproc==0) printf("Boundary NetCDF file grid # type 2 points = %d\n",(int)bound->Ntype2);
+  if(myproc==0) printf("Boundary NetCDF file grid # type 3 points = %d\n",(int)bound->Ntype3);
 
+  if(myproc==0) printf("Matching type-2 points...\n");
+  //Type-2
+  ii=-1;
+  for(jptr=grid->edgedist[2];jptr<grid->edgedist[3];jptr++) {
+    ii+=1;
 
-    if(myproc==0) printf("Boundary NetCDF file grid # type 2 points = %d\n",(int)bound->Ntype2);
-    if(myproc==0) printf("Boundary NetCDF file grid # type 3 points = %d\n",(int)bound->Ntype3);
-
-    if(myproc==0) printf("Matching type-2 points...\n");
-     //Type-2
-     ii=-1;
-     for(jptr=grid->edgedist[2];jptr<grid->edgedist[3];jptr++) {
-	 ii+=1;
-
-	 // Match suntans edge cell with the type-2 boundary file point
-	 for(jj=0;jj<bound->Ntype2;jj++){
-	     if(grid->eptr[grid->edgep[jptr]]==bound->edgep[jj]){
-		bound->ind2[ii]=jj;
-		bound->localedgep[jj]=grid->edgep[jptr]; 
-	        //printf("grid->eptr:%d, bound->edgep[jj]: %d, jj: %d, jptr: %d, grid->edgep[jptr]: %d, localedgep[jj]: %d\n",grid->eptr[grid->edgep[jptr]],bound->edgep[jj],jj,jptr,grid->edgep[jptr],bound->localedgep[jj]); 
-	     }
-	 }	 
-     }
-    if(myproc==0) printf("Matching type-3 points...\n");
-     // Type-3
-     ii=-1;
-     for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
-         ii+=1;
-	 // Match suntans grid cell with the type-3 boundary file point
-	 for(jj=0;jj<bound->Ntype3;jj++){
-	     if(grid->mnptr[grid->cellp[iptr]]==bound->cellp[jj]){
-		bound->ind3[ii]=jj;
-	     }
-	 }
-	 //printf("Type 3 : Processor = %d, jptr = %d, cellp[jptr]=%d, bound->ind3[ii]=%d\n",myproc,jptr,grid->cellp[jptr],bound->ind3[ii]);
-     }
-    if(myproc==0) printf("Matching type-2 edges...\n");
-     //Type-3 edges
-     ii=-1;
-     for(jptr=grid->edgedist[3];jptr<grid->edgedist[4];jptr++) {
-	 ii+=1;
-	 j = grid->edgep[jptr];
-	 ib=grid->mnptr[grid->grad[2*j]];
-	 // Match suntans edge cell with the type-3 boundary file point
-	 for(jj=0;jj<bound->Ntype3;jj++){
-	     if(ib==bound->cellp[jj]){
-		bound->ind3edge[ii]=jj;
-	     }
-	 }	 
-     }
-     // Check that ind2 and ind3 do not contain any -1 (non-matching points)
-
-     // Check that the number of vertical grid points match
-    if(bound->Nk != grid->Nkmax){
-	printf("Error! Number of layers in open boundary file (%d) not equal to Nkmax (%d).\n",(int)bound->Nk,grid->Nkmax); 
-	MPI_Finalize();
-        exit(EXIT_FAILURE);
+    // Match suntans edge cell with the type-2 boundary file point
+    for(jj=0;jj<bound->Ntype2;jj++){
+      if(grid->eptr[grid->edgep[jptr]]==bound->edgep[jj]){
+        bound->ind2[ii]=jj;
+        bound->localedgep[jj]=grid->edgep[jptr]; 
+        //printf("grid->eptr:%d, bound->edgep[jj]: %d, jj: %d, jptr: %d, grid->edgep[jptr]: %d, localedgep[jj]: %d\n",grid->eptr[grid->edgep[jptr]],bound->edgep[jj],jj,jptr,grid->edgep[jptr],bound->localedgep[jj]); 
+      }
     }
- } // End function
+  }
+  if(myproc==0) printf("Matching type-3 points...\n");
+  // Type-3
+  ii=-1;
+  for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
+    ii+=1;
+    // Match suntans grid cell with the type-3 boundary file point
+    for(jj=0;jj<bound->Ntype3;jj++){
+      if(grid->mnptr[grid->cellp[iptr]]==bound->cellp[jj]){
+        bound->ind3[ii]=jj;
+      }
+    }
+    //printf("Type 3 : Processor = %d, jptr = %d, cellp[jptr]=%d, bound->ind3[ii]=%d\n",myproc,jptr,grid->cellp[jptr],bound->ind3[ii]);
+  }
+  if(myproc==0) printf("Matching type-2 edges...\n");
+
+  //Type-3 edges
+  ii=-1;
+  for(jptr=grid->edgedist[3];jptr<grid->edgedist[4];jptr++) {
+    ii+=1;
+    j = grid->edgep[jptr];
+    ib=grid->mnptr[grid->grad[2*j]];
+    // Match suntans edge cell with the type-3 boundary file point
+    for(jj=0;jj<bound->Ntype3;jj++){
+      if(ib==bound->cellp[jj]){
+        bound->ind3edge[ii]=jj;
+      }
+    }
+  }
+  // Check that ind2 and ind3 do not contain any -1 (non-matching points)
+
+  // Check that the number of vertical grid points match
+  if(bound->Nk != grid->Nkmax){
+    printf("Error! Number of layers in open boundary file (%d) not equal to Nkmax (%d).\n",(int)bound->Nk,grid->Nkmax);
+    MPI_Finalize();
+    exit(EXIT_FAILURE);
+  }
+} // End function
 
 
 /*
@@ -669,7 +671,7 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
 
      int Ntype2, Ntype3, Nseg, Nt, Nk;
      int j, k, i, n;
-     int n3, n2; // Number of type 2 and 3 on a processor's grid
+     int n3, n3e, n2; // Number of type 2 and 3 on a processor's grid
 
     //Allocate memory
     if(VERBOSE>1 && myproc==0) printf("Allocating boundary data structure...\n");
@@ -858,9 +860,13 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
 	}
 	// Allocate the pointer arrays for each processor's grid
 	n3 = grid->celldist[2]-grid->celldist[1];
+        // RH: very conservative.  Either we have to allow for more
+        n3e= n3*grid->maxfaces;
+        // it is possible, in particular in mpi, for the later code to
+        // find more than n3 edges to put into ind3edge.  At the moment there is no code
+        // which uses ind3edge.  allocate it conservatively large and press on.
 	(*bound)->ind3 = (int *)SunMalloc(n3*sizeof(int),"AllocateBoundaryData");
-	(*bound)->ind3edge = (int *)SunMalloc(n3*sizeof(int),"AllocateBoundaryData");
-
+	(*bound)->ind3edge = (int *)SunMalloc(n3e*sizeof(int),"AllocateBoundaryData");
     }//endif
 
     (*bound)->time = (REAL *)SunMalloc(Nt*sizeof(REAL),"AllocateBoundaryData");
@@ -948,11 +954,13 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
 	}
 	for(i=0;i<n3;i++){
 	    (*bound)->ind3[i]=-1;
-	    (*bound)->ind3edge[i]=-1;
 	}
+	for(i=0;i<n3e;i++){
+          (*bound)->ind3edge[i]=-1;
+        }
     }
     if(myproc==0) printf("Finished Zeroing Type 3 boundary arrays...\n");
- }//End function
+ } //End function
 
 
 /*
