@@ -28,7 +28,16 @@
 #define EMPTY 999999
 #define SMALL 1e-15
 #define CHECKCONSISTENCY 0
-#define DRYCELLHEIGHT 1e-10
+// Cell with depth less than this is considered inactive
+// and dry.
+// possible that this should be significantly larger than
+// the CG epsilon
+#define DRYCELLHEIGHT 2e-5
+// Cell with depth less than this will be propped up to
+// to this deep.  should be less than DRYCELLHEIGHT
+#define CLAMPHEIGHT (0.5*DRYCELLHEIGHT)
+// Edge (or is it cell?) with depth less than this get a very high drag
+// coefficient (100)
 #define BUFFERHEIGHT 1e-2
 #define DEFAULT_NFACES 3
 

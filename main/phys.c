@@ -571,8 +571,8 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   }
   // RH now common to netcdf and non-netcdf
   for(i=0;i<Nc;i++) {
-    if(phys->h[i]<-grid->dv[i] + DRYCELLHEIGHT)
-      phys->h[i]=-grid->dv[i] + DRYCELLHEIGHT;
+    if(phys->h[i]<-grid->dv[i] + CLAMPHEIGHT)
+      phys->h[i]=-grid->dv[i] + CLAMPHEIGHT;
   }
 
   // Need to update the vertical grid after updating the free surface.
@@ -843,9 +843,7 @@ void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option)
   //fixdzz
   if(option==-1)
     for(i=0;i<Nc;i++)
-      phys->h[i]=.0; 
-
-
+      phys->h[i]=.0;
 
   // First set the thickness of the bottom grid layer.  If this is a partial-step
   // grid then the dzz will vary over the horizontal at the bottom layer.  Otherwise,
@@ -888,16 +886,36 @@ void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option)
               else 
                 grid->dzz[i][k]=grid->dz[k];
           } 
-          else 
-            grid->dzz[i][k]=0;
+        else 
+          grid->dzz[i][k]=0;
       }
     }
-  } else 
-    for(i=0;i<Nc;i++) 
-      grid->dzz[i][0]=grid->dv[i]+phys->h[i];
+  } else {
+    // Single Layer
 
+    // original code from github -- doesn't allow the layer to dry out.
+    // for(i=0;i<Nc;i++)
+    //   grid->dzz[i][0]=grid->dv[i]+phys->h[i];
 
+    // Copied from RH old branch of suntans
+    for(i=0;i<Nc;i++) {
 
+      grid->dzz[i][0] = grid->dv[i]+phys->h[i];
+      grid->ctop[i] = 0;
+
+      // RH debug
+      if (i==120072) {
+        printf("grid->dzz[c=%d][0]=%e active=%d\n",i,grid->dzz[i][0],
+               phys->active[i]);
+      }
+
+      if( grid->dzz[i][0] < DRYCELLHEIGHT ) {
+        // dry
+        // RH code propped up dzz here, but that is now done elsewhere, so
+        grid->ctop[i] = 1;          // ctop is 1 - deactivate cell.
+      }
+    }
+  }
 
   /*
   for(i=0;i<Nc;i++)
@@ -911,6 +929,8 @@ void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option)
   for(j=0;j<grid->Ne;j++) {
     ne1 = grid->grad[2*j];
     ne2 = grid->grad[2*j+1];
+
+#if 0
     if(ne1 == -1)
       grid->etop[j]=grid->ctop[ne2];
     else if(ne2 == -1)
@@ -919,10 +939,31 @@ void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option)
       grid->etop[j]=grid->ctop[ne1];
     else
       grid->etop[j]=grid->ctop[ne2];
+#else
+    // RH trying older wet-dry code
+    // first, set ne1 to the cell that this edge's etop
+    // references
+    if(ne1 == -1)
+      ne1=ne2;
+    else if(ne2 == -1)
+      ; // ne1 already set to ne1
+    else if(phys->h[ne2] > phys->h[ne1] )
+      // both sides wet, use the higher freesurface
+      ne1=ne2;
+    else
+      ; // ne1 already set to ne1
+
+    // second, carefully copy its ctop
+    if( grid->ctop[ne1]==grid->Nk[ne1] ) {
+      // that cell is dry, so we are too
+      grid->etop[j] = grid->Nke[j];
+    } else {
+      // be careful of edges that are
+      // shallower than a neighboring cell
+      grid->etop[j] = Min(grid->ctop[ne1],grid->Nke[j]);
+    }
+#endif
   }
-
-
-
 
   // If this is an initial call set the old values to the new values and
   // Determine the bottom-most flux-face height in the absence of h
@@ -2991,20 +3032,27 @@ static void UPredictor(gridT *grid, physT *phys,
     // Conjugate-gradient solver
     CGSolve(grid,phys,prop,myproc,numprocs,comm);
 
-  // correct cells drying below DRYCELLHEIGHT above the 
-  // bathymetry
-  for(i=0;i<grid->Nc;i++)
+  // correct cells drying below DRYCELLHEIGHT above the
+  // bathymetry.
+  // RH: be careful to distinguish the height considered
+  // dry, and the height below which it is "corrected".
+  // if those were the same, a cell would only be dry for
+  // one step, since next time around it would no longer be
+  // below the threshold.
+  for(i=0;i<grid->Nc;i++) {
     if(phys->h[i]<=-grid->dv[i]+DRYCELLHEIGHT) {
-      //phys->hcorr[i]=-grid->dv[i]+DRYCELLHEIGHT-phys->h[i];
-      phys->h[i]=-grid->dv[i]+DRYCELLHEIGHT;
       phys->active[i]=0;
+      //phys->hcorr[i]=-grid->dv[i]+DRYCELLHEIGHT-phys->h[i];
+      if(phys->h[i]<=-grid->dv[i]+CLAMPHEIGHT)
+        phys->h[i]=-grid->dv[i]+CLAMPHEIGHT;
       phys->s[i][grid->Nk[i]-1]=0;
     } else {
       phys->hcorr[i]=0;
       phys->active[i]=1;
     }
+  }
 
-  // Add back the implicit barotropic term to obtain the 
+  // Add back the implicit barotropic term to obtain the
   // hydrostatic horizontal velocity field.
   for(jptr=grid->edgedist[0];jptr<grid->edgedist[1];jptr++) {
     j = grid->edgep[jptr];
@@ -4427,7 +4475,7 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop) {
        grid->dzf[j][k]=dz_bottom;
        */
 
-    for(k=grid->etop[j];k<grid->Nke[j];k++) 
+    for(k=grid->etop[j];k<grid->Nke[j];k++)
       if(grid->dzf[j][k]<=DRYCELLHEIGHT)
         grid->dzf[j][k]=0;
   }
