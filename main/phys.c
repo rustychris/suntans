@@ -903,12 +903,6 @@ void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option)
       grid->dzz[i][0] = grid->dv[i]+phys->h[i];
       grid->ctop[i] = 0;
 
-      // RH debug
-      if (i==120072) {
-        printf("grid->dzz[c=%d][0]=%e active=%d\n",i,grid->dzz[i][0],
-               phys->active[i]);
-      }
-
       if( grid->dzz[i][0] < DRYCELLHEIGHT ) {
         // dry
         // RH code propped up dzz here, but that is now done elsewhere, so
