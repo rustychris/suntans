@@ -125,7 +125,7 @@ int Check(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_C
 
       printf("Horizontal Courant number problems:\n");
       printf("  Grid indices: j=%d k=%d (Nke=%d)\n", icu, kcu, grid->Nke[icu]);
-      printf("  Location: x=%.3e, y=%.3e, z=%.3e\n",grid->xe[icu],grid->ye[icu],
+      printf("  Location: x=%.7e, y=%.7e, z=%.3e\n",grid->xe[icu],grid->ye[icu],
           0.5*(DepthFromDZ(grid,phys,grid->grad[2*icu],kcu)+
             DepthFromDZ(grid,phys,grid->grad[2*icu+1],kcu)));
       printf("  Free-surface heights (on either side): %.3e, %.3e\n",phys->h[nc1],phys->h[nc2]);
