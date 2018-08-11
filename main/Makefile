@@ -141,6 +141,7 @@ ifeq ($(PARMETISHOME),$(CURDIR)/ext/ParMetis-3.1.1)
 # VERSION 3 -- for now use default compiler settings
 PARMETIS_URL=http://glaros.dtc.umn.edu/gkhome/fetch/sw/parmetis/OLD/ParMetis-3.1.1.tar.gz
 ext/ParMetis-3.1.1.tar.gz:
+	[ -d ext ] || mkdir ext
 	wget -O $@ $(PARMETIS_URL)
 
 # --no-print-directory is an obscure workaround for an issue with calling
