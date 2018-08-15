@@ -248,12 +248,15 @@ double GetValue(char *filename, char *str, int *status)
     getchunk(istr,ostr);
     if(!strcmp(ostr,str)) {
       for(ispace=strlen(ostr);ispace<strlen(istr);ispace++) 
-	if(!isspace(istr[ispace]))
-	  break;
-      if(ispace==strlen(istr)-1)
-	*status=0;
+        if(!isspace(istr[ispace]))
+          break;
+      /* RH: this used to be strlen(istr)-1, but that
+       discards lines which have a single character value, and no
+      comment or space afterwards. */
+      if(ispace==strlen(istr))
+        *status=0;
       else
-	*status=1;
+        *status=1;
       getchunk(&(istr[ispace]),ostr);
       break;
     }
