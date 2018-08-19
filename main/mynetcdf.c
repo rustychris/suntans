@@ -64,7 +64,9 @@ int MPI_NCOpen(char *file, int perms, char *caller, int myproc) {
   } else {
     // Create a new netcdf dataset
     if (VERBOSE>1) printf("Creating netcdf file: %s\n",file) ;
-    if ((retval = nc_create(file,perms, &ncid)))
+    // RH: add share flag on the off-chance it permits access to data
+    // during the run
+    if ((retval = nc_create(file,perms|NC_SHARE, &ncid)))
       ERR(retval);
   }
   if (retval){
@@ -525,8 +527,9 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
    const size_t starttwo[] = {prop->nctimectr,0};
    const size_t counttwo[] = {1,grid->Nc};
    const size_t count_t_Ne[] = {1,grid->Ne};
-   size_t startthree[] = {prop->nctimectr,0,0};
-   size_t countthree[] = {1,grid->Nkmax,grid->Nc};
+   const size_t startthree[] = {prop->nctimectr,0,0};
+   const size_t countthree[] = {1,grid->Nkmax,grid->Nc};
+   const size_t countthree_e[] = {1,grid->Nkmax,grid->Ne};
    const size_t countthreew[] = {1,grid->Nkmax+1,grid->Nc};
    const REAL time[] = {prop->nctime};
 
@@ -544,82 +547,85 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
         printf("Outputting data to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
       else
         printf("Outputting blowup data to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
+
+      // debugging a netcdf error:
+      printf("time start: %d\n",prop->nctimectr);
     }
     
     /* Write the time data*/
     if ((retval = nc_inq_varid(ncid, "time", &varid)))
-	ERR(retval);
+      ERRM(retval,"time id");
     if ((retval = nc_put_vara_double(ncid, varid, startone, countone, time )))
-	ERR(retval);
+      ERRM(retval,"time");
     
     /* Write to the physical variables*/
     if ((retval = nc_inq_varid(ncid, "eta", &varid)))
-	ERR(retval);
+      ERRM(retval,"eta id");
     if ((retval = nc_put_vara_double(ncid, varid, starttwo, counttwo, phys->h )))
- 	ERR(retval);
+      ERRM(retval,"eta");
     
     if ((retval = nc_inq_varid(ncid, "uc", &varid)))
-	ERR(retval);
+      ERRM(retval,"uc id");
     ravel(phys->uc, phys->tmpvar, grid);
     if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
-	ERR(retval);
+      ERRM(retval,"uc");
     
     if ((retval = nc_inq_varid(ncid, "vc", &varid)))
-	ERR(retval);
+      ERRM(retval,"vc id");
     ravel(phys->vc, phys->tmpvar, grid);
     if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
-	ERR(retval);
+      ERRM(retval,"vc");
       
     // write w at cell top and bottom
     if ((retval = nc_inq_varid(ncid, "w", &varid)))
-	ERR(retval);
+      ERRM(retval,"w id");
     ravelW(phys->w, phys->tmpvarW, grid);
     if ((retval = nc_put_vara_double(ncid, varid, startthree, countthreew, phys->tmpvarW )))
-	ERR(retval);
+      ERRM(retval,"w");
 
     if ((retval = nc_inq_varid(ncid, "nu_v", &varid)))
-	ERR(retval);
+      ERRM(retval,"nu_v id");
     ravel(phys->nu_tv, phys->tmpvar, grid);
     if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
-	ERR(retval);
+      ERRM(retval,"nu_v");
     
     // Tracers
      if(prop->beta>0){
        if ((retval = nc_inq_varid(ncid, "salt", &varid)))
-	  ERR(retval);
+         ERRM(retval,"salt id");
       ravel(phys->s, phys->tmpvar, grid);
       if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
-	  ERR(retval);
+        ERRM(retval,"salt");
      }
      
      if(prop->gamma>0){
 	if ((retval = nc_inq_varid(ncid, "temp", &varid)))
-	  ERR(retval);
+	  ERRM(retval,"temp id");
 	ravel(phys->T, phys->tmpvar, grid);
 	if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
-	  ERR(retval);
+	  ERRM(retval,"temp");
      }
       
      if( (prop->gamma>0) || (prop->beta>0) ){ 
 	if ((retval = nc_inq_varid(ncid, "rho", &varid)))
-	  ERR(retval);
+	  ERRM(retval,"rho id");
 	ravel(phys->rho, phys->tmpvar, grid);
 	if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
-	  ERR(retval);
+	  ERRM(retval,"rho");
      }
 
      if(prop->calcage>0){ 
        if ((retval = nc_inq_varid(ncid, "agec", &varid)))
-         ERR(retval);
+         ERRM(retval,"agec id");
        ravel(age->agec, phys->tmpvar, grid);
        if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
-         ERR(retval);
+         ERRM(retval,"agec");
        
        if ((retval = nc_inq_varid(ncid, "agealpha", &varid)))
-         ERR(retval);
+         ERRM(retval,"agealpha id");
        ravel(age->agealpha, phys->tmpvar, grid);
        if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
-         ERR(retval);
+         ERRM(retval,"agealpha");
      }
      
      // Vertical grid spacing
@@ -629,11 +635,10 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
      if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
        ERR(retval);
      
-     countthree[2] = grid->Ne;
      if ((retval = nc_inq_varid(ncid, "dzf", &varid)))
        ERR(retval);
      ravelEdge(grid->dzf, phys->tmpvarE, grid);
-     if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvarE )))
+     if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree_e, phys->tmpvarE )))
        ERR(retval);
 
      if ((retval = nc_inq_varid(ncid, "etop", &varid)))
@@ -645,7 +650,7 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
      if ((retval = nc_inq_varid(ncid, "U", &varid)))
        ERR(retval);
      ravelEdge(phys->u, phys->tmpvarE, grid);
-     if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvarE )))
+     if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree_e, phys->tmpvarE )))
        ERR(retval);
 
      // Wind variables
@@ -725,13 +730,18 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
      }
      
     /* Update the time counter*/
-    prop->nctimectr += 1;  
+    prop->nctimectr += 1;
+
+    // RH: try to make more data available during the run
+    printf("SYNCING netcdf\n");
+    if ( (retval=nc_sync(ncid)) )
+      ERRM(retval,"calling nc_sync");
    }
    
    // Free the temporary vector
    //SunFree(tmpvar,grid->Nc*grid->Nkmax*sizeof(REAL),"WriteOuputNC");
    //SunFree(tmpvarE,grid->Ne*grid->Nkmax*sizeof(REAL),"WriteOuputNC");
-  
+
 } // End of function
 
 
@@ -2315,6 +2325,8 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
    //SunFree(tmpvar,grid->Nc*grid->Nkmax,"InitialiseOutputNC");
    if(VERBOSE>1 && myproc==0) printf("Done.\n");
 
+   // RH -- this might make data more available during the simulation
+   nc_sync(ncid);
 }// End function
 
 /*
