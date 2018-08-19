@@ -217,7 +217,7 @@ void SetDragCoefficients(gridT *grid, physT *phys, propT *prop);
 REAL DepthFromDZ(gridT *grid, physT *phys, int i, int kind);
 REAL InterpToFace(int j, int k, REAL **phi, REAL **u, gridT *grid);
 void ComputeUC(REAL **ui, REAL **vi, physT *phys, gridT *grid, int myproc, interpolation interp) ;
-void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option);
+void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc);
 void ComputeConservatives(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_Comm comm);
 void SetDensity(gridT *grid, physT *phys, propT *prop);
 
