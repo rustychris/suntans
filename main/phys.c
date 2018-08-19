@@ -3633,6 +3633,8 @@ static void UPredictor(gridT *grid, physT *phys,
   // RH: this might be problematic when (a) a boundary cell has multiple
   //    edges on the boundary, or (b) an internal edge is between two
   //    boundary cells.
+  // disabling it just for the boundary edges is not sufficient -- appears
+  // that we need to zero velocity on edges between two fs cells.
   for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
     i = grid->cellp[iptr];
     for(nf=0;nf<grid->nfaces[i];nf++) {
@@ -3640,20 +3642,44 @@ static void UPredictor(gridT *grid, physT *phys,
       if(grid->mark[ne]==3) {
         for(k=grid->etop[ne];k<grid->Nke[ne];k++) {
           phys->u[ne][k] = 0;
-          sum=0;
           // in at least one case where boundary cells with freesurface
           // BC had multiple edges on the boundary and had internal edges
           // between two FS BC cells, this led to instability.
           // it might be stable if made aware of multiple BC edges per face.
 #ifdef VELOCITY_ON_TYPE3_EDGES
+          sum=0;
           for(nf1=0;nf1<grid->nfaces[i];nf1++)
             sum+=phys->u[grid->face[i*grid->maxfaces+nf1]][k]*grid->df[grid->face[i*grid->maxfaces+nf1]]*grid->normal[i*grid->maxfaces+nf1];
-#endif // VELOCITY_ON_TYPE3_EDGES
           phys->u[ne][k]=-sum/grid->df[ne]/grid->normal[i*grid->maxfaces+nf];
+#endif // VELOCITY_ON_TYPE3_EDGES
+        }
+      } else if (grid->mark[ne]==0 ) {
+        // Even more heavy-handed -- search for edges which have two type 1 cells
+        // as neighbors.
+        // abusing jptr as a second cellptr.  Only have to search over
+        // jptr>iptr
+
+        for(jptr=iptr+1;jptr<grid->celldist[2];jptr++) {
+          j = grid->cellp[jptr];
+          if ( ( (grid->grad[2*ne]==i)
+                 && (grid->grad[2*ne+1]==j))
+               ||
+               ( (grid->grad[2*ne]==j)
+                 && (grid->grad[2*ne+1]==i)) ) {
+            for(k=grid->etop[ne];k<grid->Nke[ne];k++)
+              phys->u[ne][k] = 0;
+#ifdef DBG_PROC
+            if(DBG_PROC==myproc) {
+              printf("[p=%d] zero'd edge %d which is internal between two type 1 cells\n",
+                     myproc, ne);
+            }
+#endif
+          }
         }
       }
     }
   }
+
 }
 
 /*
