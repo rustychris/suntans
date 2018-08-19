@@ -216,7 +216,10 @@ void OpenFiles(propT *prop, int myproc)
     if(prop->mergeArrays==0){
 	MPI_GetFile(filename,DATAFILE,"outputNetcdfFile","OpenFiles",myproc);
 	sprintf(str,"%s.nc.%d",filename,myproc);
-	prop->outputNetcdfFileID = MPI_NCOpen(str,NC_NETCDF4,"OpenFiles",myproc);
+        prop->outputNetcdfFileID = MPI_NCOpen(str,NC_NETCDF4,"OpenFiles",myproc);
+        // RH try class to improve chance that data is available mid-run -- doesn't work
+        // because of netcdf4 operations.
+        // prop->outputNetcdfFileID = MPI_NCOpen(str,NC_SHARE|NC_64BIT_OFFSET,"OpenFiles",myproc);
     }
   }
 
@@ -410,7 +413,7 @@ void ReadPhysicalVariables(gridT *grid, physT *phys, propT *prop, int myproc, MP
 
   if(VERBOSE>1 && myproc==0) printf("Reading from rstore...\n");
   //fixdzz
-  UpdateDZ(grid,phys,prop,-1); 
+  UpdateDZ(grid,phys,prop,-1,myproc); 
 
   if(fread(&(prop->nstart),sizeof(int),1,prop->StartFID) != 1)
     printf("Error reading prop->nstart\n");
@@ -482,7 +485,7 @@ void ReadPhysicalVariables(gridT *grid, physT *phys, propT *prop, int myproc, MP
       printf("Error reading phys->s0[i]\n");
   fclose(prop->StartFID);
 
-  UpdateDZ(grid,phys,prop, 0);
+  UpdateDZ(grid,phys,prop, 0,myproc);
 
   // cell centered velocity computed so that this does not 
   // need to be reconsidered 

@@ -29,6 +29,7 @@
 /* Netcdf error */
 #define ERRCODE 2
 #define ERR(e) {printf("Error: %s\n", nc_strerror(e)); MPI_Finalize(); exit(ERRCODE);}
+#define ERRM(e,m) {printf("Error: (%s) %s\n", m, nc_strerror(e)); MPI_Finalize(); exit(ERRCODE);}
   
 /* Public functions */
 int getTimeRec(REAL nctime, REAL *time, int nt);
