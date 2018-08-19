@@ -91,7 +91,20 @@ int Check(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_C
   CmaxW=0;
   for(i=0;i<Nc;i++) 
     for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-      C = 0.5*fabs(phys->w[i][k]+phys->w[i][k+1])*prop->dt/grid->dzz[i][k];
+      if(0){
+        C = 0.5*fabs(phys->w[i][k]+phys->w[i][k+1])*prop->dt/grid->dzz[i][k];
+      } else {
+        // RH calculate based on upwind cell
+        // accumulate w _out_ of this volume in C
+        C=0;
+        if(k>grid->ctop[i] && phys->w[i][k]>0) {
+          C+=phys->w[i][k];
+        }
+        if(phys->w[i][k+1]<0) {
+          C-=phys->w[i][k+1];
+        }
+        C = C*prop->dt/grid->dzz[i][k];
+      }
       if(C>CmaxW) {
 	icw = i;
 	kcw = k;
@@ -151,12 +164,12 @@ int Check(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_C
       dtsuggestW = CMAXSUGGEST*grid->dzz[icw][kcw]/fabs(0.5*(phys->w[icw][kcw]+phys->w[icw][kcw]));
 
       printf("Vertical Courant number problems:\n");
-      printf("  Grid indices: i=%d k=%d (Nkc=%d)\n", icw, kcw, grid->Nkc[icw]);
+      printf("  Grid indices: i=%d k=%d (Nk=%d)\n", icw, kcw, grid->Nk[icw]);
       printf("  Location: x=%.3e, y=%.3e, z=%.3e\n",grid->xv[icw],grid->yv[icw],DepthFromDZ(grid,phys,icw,kcw));
       printf("  Free-surface height: %.3e\n",phys->h[icw]);
       printf("  Depth: %.3e\n",grid->dv[icw]);
-      printf("  Wmax = %.3e (located half-way between faces)\n",0.5*(phys->w[icw][kcw]+phys->w[icw][kcw+1]));
-      printf("  Vertical grid spacing dz = %.3e\n",grid->dzz[icw][kcw]);
+      printf("  Wmax = %.3e %.3e (pos-up, above, below face)\n",phys->w[icw][kcw],phys->w[icw][kcw+1]);
+      printf("  Vertical grid spacing dz = %.3e, %.3e\n",grid->dzz[icw][kcw],grid->dzz[icw][kcw+1]);
       printf("  Vertical Courant number is CmaxW = %.2f.\n",CmaxW);
       printf("  You specified a maximum of %.2f in suntans.dat\n",prop->Cmax);
       printf("  Your time step size is %.2f.\n",prop->dt);
