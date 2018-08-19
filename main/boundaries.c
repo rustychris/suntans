@@ -37,7 +37,8 @@ int getTimeRecBnd(REAL nctime, REAL *time, int nt);
  * set to 0
  *
  */
-void OpenBoundaryFluxes(REAL **q, REAL **ub, REAL **ubn, gridT *grid, physT *phys, propT *prop) {
+void OpenBoundaryFluxes(REAL **q, REAL **ub, REAL **ubn, gridT *grid, physT *phys, propT *prop,
+                        int myproc) {
   int j, jptr, ib, k, forced;
   REAL **uc = phys->uc, **vc = phys->vc, **ucold = phys->uold, **vcold = phys->vold;
   REAL z, c0, c1, C0, C1, dt=prop->dt, u0, u0new, uc0, vc0, uc0old, vc0old, ub0;
@@ -50,9 +51,16 @@ void OpenBoundaryFluxes(REAL **q, REAL **ub, REAL **ubn, gridT *grid, physT *phy
     for(k=grid->etop[j];k<grid->Nke[j];k++) 
       ub[j][k]=0;
 
-    for(k=grid->etop[j];k<grid->Nke[j];k++) 
+    for(k=grid->etop[j];k<grid->Nke[j];k++) {
       ub[j][k]=phys->boundary_u[jptr-grid->edgedist[2]][k]*grid->n1[j]+
 	phys->boundary_v[jptr-grid->edgedist[2]][k]*grid->n2[j];
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+      if(myproc==DBG_PROC && j==DBG_EDGE) {
+        printf("[p=%d j=%d k=% 3d] OpenBoundaryFluxes ub(aka utmp)=%.5f\n",
+               myproc, j, k, ub[j][k]);
+      }
+#endif
+    }
   }
 }
 
@@ -245,10 +253,24 @@ void BoundaryVelocities(gridT *grid, physT *phys, propT *prop, int myproc, MPI_C
     }
   }
 
+  // RH - seems that type marker 3 edges are underconstrained --
+  // set them to zero.  this probably isn't necessary as these
+  // should just be zero for all time.
+  for(jptr=grid->edgedist[3];jptr<grid->edgedist[4];jptr++)
+    {
+      jind = jptr-grid->edgedist[2];
+      j = grid->edgep[jptr];
+      for(k=grid->etop[j];k<grid->Nke[j];k++) {
+        phys->boundary_u[jind][k]=0;
+        phys->boundary_v[jind][k]=0;
+        phys->boundary_w[jind][k]=0;
+      }
+    }
+
   // Set velocities in type-3 cells
   // Try recalculating the cell tops here
   ISendRecvCellData2D(phys->h,grid,myproc,comm);
-  UpdateDZ(grid,phys,prop,0);
+  UpdateDZ(grid,phys,prop,0,myproc);
   if(prop->netcdfBdy){
     ii=-1;
     for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {

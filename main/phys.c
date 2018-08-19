@@ -9,6 +9,11 @@
  * University. All Rights Reserved.
  *
  */
+#include <math.h>
+#include <assert.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 #include "suntans.h"
 #include "phys.h"
 #include "grid.h"
@@ -31,6 +36,8 @@
 #include "physio.h"
 #include "merge.h"
 #include "sediments.h"
+
+#define ASSERT_FINITE(f) assert((f)==(f))
 
 /*
  * Private Function declarations.
@@ -543,7 +550,7 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   }
   // Need to update the vertical grid and fix any cells in which
   // dzz is too small when h=0.
-   UpdateDZ(grid,phys,prop, -1);
+  UpdateDZ(grid,phys,prop, -1,myproc);
  
 /*  for(i=0;i<Nc;i++) {
     grid->dv[i]=0;
@@ -577,7 +584,7 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
 
   // Need to update the vertical grid after updating the free surface.
   // The 1 indicates that this is the first call to UpdateDZ
-  UpdateDZ(grid,phys,prop, 1);
+  UpdateDZ(grid,phys,prop, 1,myproc);
 
   // initailize variables to 0 (except for filter "pressure")
   for(i=0;i<Nc;i++) {
@@ -803,7 +810,7 @@ void InitializeVerticalGrid(gridT **grid,int myproc)
 
 /*
  * Function: UpdateDZ
- * Usage: UpdateDZ(grid,phys,0);
+ * Usage: UpdateDZ(grid,phys,0,myproc);
  * -----------------------------
  * This function updates the vertical grid spacings based on the free surface and
  * the bottom bathymetry.  That is, if the free surface cuts through cells and leaves
@@ -816,7 +823,8 @@ void InitializeVerticalGrid(gridT **grid,int myproc)
  *   thereafter.
  *
  */
-void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option)
+#if 0  // RH_UpdateDZ
+void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
 {
   int i, j, k, ne1, ne2, Nc=grid->Nc, Ne=grid->Ne, flag, nc1, nc2;
   REAL z, dzz1, dzz2;
@@ -1004,6 +1012,221 @@ void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option)
     }
   }
 }
+#else // RH_UpdateDZ
+void
+UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
+{
+  int i, j, k, ne1, ne2, Nc=grid->Nc, Ne=grid->Ne, flag=0;
+  int verb = 0;
+
+  REAL z, dz_added;
+
+  // If this is not an initial call then set dzzold to store the old value of dzz
+  // and also set the etopold and ctopold pointers to store the top indices of
+  // the grid.
+  if(!option) {
+    for(j=0;j<Ne;j++) {
+      grid->etopold[j]=grid->etop[j];
+      //for(k=0;k<grid->Nke[j];k++) 
+      //  grid->dzfold[j][k] = grid->dzf[j][k];
+    }
+    for(i=0;i<Nc;i++) {
+      grid->ctopold[i]=grid->ctop[i];
+      for(k=0;k<grid->Nk[i];k++)
+        grid->dzzold[i][k]=grid->dzz[i][k];
+    }
+  }
+
+  // RH: removed duplicate loop here.
+
+  // Loop through and set the vertical grid thickness when the free surface cuts through 
+  // a particular cell.
+  if(grid->Nkmax>1) {
+    for(i=0;i<Nc;i++) {
+      z = 0;
+      flag = 0;
+      for(k=0;k<grid->Nk[i];k++) {
+        z-=grid->dz[k];// z is the bottom of layer k
+        // elm version - modified
+        if(phys->h[i]-z>DZMIN_SURFACE){
+          // we've hit a real wet layer
+          if(!flag) {
+            // this is the first wet layer
+            // RH: removed h==z check, since above check is now strictly >
+            if(k==grid->Nk[i]-1) {
+              grid->dzz[i][k]=phys->h[i]+grid->dv[i];
+              grid->ctop[i]=k;
+              if( grid->dzz[i][k]<=DRYCELLHEIGHT) {
+                if(grid->dzz[i][k]<CLAMPHEIGHT)  // if it's really thin, we don't set flag here and will add volume below.
+                  break;
+                // otherwise, make it dry, but don't add any volume.
+                grid->ctop[i]=k+1;
+              }
+            } else {
+              grid->dzz[i][k]=phys->h[i]-z;
+              grid->ctop[i]=k;
+            }
+            flag=1;
+          } else {
+            if(k==grid->Nk[i]-1) {
+              // for the bed cell, when the bed layer does *not* have the freesurface, too
+              // the lumped way - allows for the cell to extend into what is usually a deeper layer:
+              // dzz = elevation of top of this layer - bed_elevation
+              grid->dzz[i][k] = (z+grid->dz[k]) - (-grid->dv[i]);
+            } else 
+              if(z<-grid->dv[i])
+                grid->dzz[i][k]=0;
+              else 
+                grid->dzz[i][k]=grid->dz[k];
+          } 
+        } else {
+          // We haven't seen the freesurface yet, or it was too close to the bottom of our cell
+          // to count.
+          grid->dzz[i][k]=0; // layer is above the freesurface
+        }
+      }
+      
+      if (!flag){  
+        // flag is still 0 if h is within CLAMPHEIGHT of the bed (and possibly below the
+        // bed.
+        k=grid->Nk[i] - 1; // bed cell
+
+        grid->dzz[i][k]=phys->h[i]+grid->dv[i];
+
+        if( grid->dzz[i][k] < CLAMPHEIGHT ) {
+          // how much height we have to artificially put back into the cell.
+          dz_added = CLAMPHEIGHT - grid->dv[i] - phys->h[i];
+
+          // RCH: In this case, I'm not sure what should be done about dzz.  If left as is, it will be 
+          // consistent with fluxes on this step, and that seems necessary for conservation of mass
+          // On the next step, though, dzz will be based on the fake phys->h, modified by any fluxes, so
+          // then it will be inconsistent with dzzold, and that would lead to freshening.
+          // If we update dzz here, we'll get freshening on this step.  Makes sense - either way we just added
+          // some cell volume without any fluxes of scalar into the cell.
+          phys->h[i] += dz_added; // dzmin-grid->dv[i];
+        
+          // Dealer's choice: adding it to both doesn't conserve mass, but should preserve max/min
+          // adding it to only dzz means we get some artificial freshening on this step.
+          // adding to neither means that either dzz is negative and things are going to crash, or
+          // that we'll get artificial freshening on the next step.
+          grid->dzz[i][k] += dz_added;
+          grid->dzzold[i][k] += dz_added;
+        }
+
+        // RCH: This can be a problem - it's possible for a thin cell
+        // to still have some flow out of it, even when dry (I think)
+        // because if it starts off with an inflow, the fluxface will be
+        // nonzero, and CGSolve may switch the sign of the flow
+        // test for dryness should consult ctop directly.
+        // grid->dzz[i][k]=0;
+      
+        // Dry out the cell:
+        grid->ctop[i]=grid->Nk[i];             // set top layer index to be Nk
+      }
+    }
+  } else {
+    // Single layer
+    for(i=0;i<Nc;i++) {
+      grid->dzz[i][0] = grid->dv[i]+phys->h[i];
+      grid->ctop[i] = 0;      
+      if(grid->dzz[i][0]< DRYCELLHEIGHT) { // dry
+        if(grid->dzz[i][0]<CLAMPHEIGHT) {  // dry and the wet layer is too thin, set it to be dzmin
+          phys->h[i]=CLAMPHEIGHT-grid->dv[i];
+          grid->dzz[i][0] = grid->dv[i]+phys->h[i];
+        }
+        // See above comment on zeroing out dzz
+        // grid->dzz[i][0] = 0.0;      // layer thickness to be zero
+        grid->ctop[i] = 1;          // ctop is 1 - deactivate cell.
+      }
+    }
+  }
+  
+  // elm version - warnings
+  for(i=0;i<Nc;i++)
+    if(grid->dv[i]+phys->h[i]<0)
+      printf("WARNING: negative depth %f, at cell i %d, layers Nk[i] %d, flag %d\n",grid->dv[i]+phys->h[i],i,grid->Nk[i],flag);
+
+
+  // Now set grid->etop and ctop which store the index of the top cell  
+  // Also update flux face heights, dzf[j][k], and de = sum(dzf)
+  for(j=0;j<grid->Ne;j++) {
+    ne1 = grid->grad[2*j];
+    ne2 = grid->grad[2*j+1];
+    if(ne1 == -1 || ne2 == -1 ) {
+      if( ne1==-1 ) ne1=ne2; // set ne1 to be the wet cell
+      grid->etop[j]=grid->ctop[ne1];
+
+      for(k=0;k<grid->ctop[ne1] && k<grid->Nke[j];k++)
+        grid->dzf[j][k] = 0.0;
+
+      for(k=grid->ctop[ne1];k<grid->Nke[j];k++) 
+        grid->dzf[j][k] = grid->dzz[ne1][k];
+      // NB: dry,closed and flow bc edges still have dzf>0
+
+      if ( grid->etop[j] > grid->Nke[j] )
+        grid->etop[j] = grid->Nke[j];
+
+    } else {
+      // set ne1 to be the upwind cell, or if u==0, the cell with higher freesurface
+      // we're using a u that isn't quite "final" in UPredictor, but for most edges
+      // it is final (except non-hydrostatic) and only really different for the cases
+      // of edges that are drying out or becoming wet - in these cases I think it
+      // still works out...
+
+      // so we're using the new velocity phys->u, and even though we're about to 
+      // *set* etop, we can still use etop to get the top wet edge for this computational
+      // step - the one used so far - 
+      if (!option && grid->etop[j] < grid->Nke[j] && phys->u[j][grid->etop[j]]!=0.0 ) {
+        if( phys->u[j][grid->etop[j]] > 0 ) 
+          // ne2 is the upwind cell
+          ne1=ne2;
+        // otherwise ne1 already refers to the upwind cell.
+      } else {
+        // the edge is dry and/or has no velocity
+        if (phys->h[ne2] > phys->h[ne1] )
+          ne1 = ne2;
+      }
+
+      // top of the faces comes from higher cell, but be careful of edges that are
+      // shallower than neighboring cells
+      grid->etop[j] = Min(grid->ctop[ne1],grid->Nke[j]); 
+      // old code: Min(grid->ctop[ne1],grid->ctop[ne2]);
+
+      //DRY - from Bing, 2009-01-26
+      if( grid->ctop[ne1]==grid->Nk[ne1] ) {
+        grid->etop[j] = grid->Nke[j];
+      }
+
+      // FLUX FACE HEIGHTS -- set in SetFluxHeight
+    }
+  }
+
+  // If this is an initial call set the old values to the new values.
+  if(option) {
+    for(j=0;j<Ne;j++)  {
+      grid->etopold[j]=grid->etop[j];
+    }
+    for(i=0;i<Nc;i++) {
+      grid->ctopold[i]=grid->ctop[i];
+      for(k=0;k<grid->Nk[i];k++)
+        grid->dzzold[i][k]=grid->dzz[i][k];
+    }
+  }
+
+#if defined(DBG_PROC) && defined(DBG_CELL)
+  if(myproc==DBG_PROC) {
+    i=DBG_CELL;
+    printf("[p=%d c=%d] end of UpdateDZ, ctop=%d  ctopold=%d\n",
+           myproc,i,grid->ctop[i], grid->ctopold[i]);
+    for(k=0;k<grid->Nk[i];k++)
+      printf("[p=%d c=%d k=% 2d]   dzz=%.5f  dzzold=%.5f\n",
+             myproc,i,k, grid->dzz[i][k], grid->dzzold[i][k]);
+  }
+#endif
+
+}
+#endif // RH UpdateDZ
+
 
 /*
  * Function: DepthFromDZ
@@ -1086,7 +1309,7 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
   // get the boundary velocities (boundaries.c)
   BoundaryVelocities(grid,phys,prop,myproc, comm); 
   // get the openboundary flux (boundaries.c)
-  OpenBoundaryFluxes(NULL,phys->u,NULL,grid,phys,prop);
+  OpenBoundaryFluxes(NULL,phys->u,NULL,grid,phys,prop,myproc);
   // get the boundary scalars (boundaries.c)
   BoundaryScalars(grid,phys,prop,myproc,comm);
   // set the height of the face bewteen cells to compute the flux
@@ -1376,14 +1599,15 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
     }
     // Compute average
     if(prop->calcaverage){
-	UpdateAverageVariables(grid,average,phys,met,prop,comm,myproc);	
- 	UpdateAverageScalars(grid,average,phys,met,prop,comm,myproc);	
+      UpdateAverageVariables(grid,average,phys,met,prop,comm,myproc);
+      UpdateAverageScalars(grid,average,phys,met,prop,comm,myproc);
     }
 
     // Check whether or not run is blowing up
     t0=Timer();
     blowup=(Check(grid,phys,prop,myproc,numprocs,comm) || blowup);
     t_check+=Timer()-t0;
+
     // Output data based on ntout specified in suntans.dat
     t0=Timer();
     if (prop->outputNetcdf==0){
@@ -1571,6 +1795,18 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
       //phys->Cn_U[j][k]=0;
     }
   }
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+  if(myproc==DBG_PROC) {
+    printf("\nutmp update due to old terms, old nonhydro\n");
+    for(k=grid->etop[DBG_EDGE];k<grid->Nke[DBG_EDGE];k++) {
+      printf("[p=%d j=%d k=% 3d] u=%.9f  utmp - u=%.9f\n",
+             myproc, DBG_EDGE, k, phys->u[DBG_EDGE][k],
+             phys->utmp[j][k] - phys->u[j][k]);
+    }
+  }
+#endif
+
   // Add on explicit term to boundary edges (type 4 BCs)
   for(jptr=grid->edgedist[4];jptr<grid->edgedist[5];jptr++) {
     j = grid->edgep[jptr]; 
@@ -1631,6 +1867,17 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
       }
   }
 
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+  if(myproc==DBG_PROC) {
+    printf("\nCn_U from coriolis and baroclinicity\n");
+    for(k=grid->etop[DBG_EDGE];k<grid->Nke[DBG_EDGE];k++) {
+      printf("[p=%d j=%d k=% 3d] Cn_U=%.9f m/s\n",
+             myproc, DBG_EDGE, k, phys->Cn_U[DBG_EDGE][k]);
+    }
+  }
+#endif
+
   // Set stmp and stmp2 to zero since these are used as temporary variables for advection and
   // diffusion.
   for(i=0;i<grid->Nc;i++)
@@ -1639,30 +1886,29 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
 
   // Compute Eulerian advection of momentum (nonlinear!=0)
   if(prop->nonlinear) {
-
     // Interpolate uc to faces and place into ut
     GetMomentumFaceValues(phys->ut,phys->uc,phys->boundary_u,phys->u,grid,phys,prop,comm,myproc,prop->nonlinear);
 
     // Conservative method assumes ut is a flux
     if(prop->conserveMomentum)
       for(jptr=grid->edgedist[0];jptr<grid->edgedist[5];jptr++) {
-	j=grid->edgep[jptr];
+        j=grid->edgep[jptr];
 
-	for(k=grid->etop[j];k<grid->Nke[j];k++)
-	  phys->ut[j][k]*=grid->dzf[j][k];
+        for(k=grid->etop[j];k<grid->Nke[j];k++)
+          phys->ut[j][k]*=grid->dzf[j][k];
       }
-
+    
     // Now compute the cell-centered source terms and put them into stmp
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
       i=grid->cellp[iptr];
 
       // Store dzz in a since for conservative scheme need to divide by depth (since ut is a flux)
       if(prop->conserveMomentum) {
-	for(k=grid->ctop[i];k<grid->Nk[i];k++)
-	  a[k]=grid->dzz[i][k];
+        for(k=grid->ctop[i];k<grid->Nk[i];k++)
+          a[k]=grid->dzz[i][k];
       } else {
-	for(k=grid->ctop[i];k<grid->Nk[i];k++)
-	  a[k]=1.0;
+        for(k=grid->ctop[i];k<grid->Nk[i];k++)
+          a[k]=1.0;
       }
 
       // for each face
@@ -1672,29 +1918,39 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
         ne = grid->face[i*grid->maxfaces+nf];
 
         // for all but the top cell layer
-        for(k=grid->ctop[i];k<grid->Nk[i];k++) 
+        // for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+        for(k=max(grid->ctop[i],grid->etop[ne]);
+            k<grid->Nke[ne];
+            k++) {
           // this is basically Eqn 50, u-component
           phys->stmp[i][k]+=
             phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[k]*grid->Ac[i]);
-
+          // RH DBG
+          if( phys->stmp[i][k]!=phys->stmp[i][k] ) {
+            printf("Spinning on proc=%d, pid=%d\n",myproc,getpid());
+            while(1);
+          }
+          ASSERT_FINITE(phys->stmp[i][k]);
+        }
         // Top cell is filled with momentum from neighboring cells
-	if(prop->conserveMomentum)
-	  for(k=grid->etop[ne];k<grid->ctop[i];k++) 
-	    phys->stmp[i][grid->ctop[i]]+=
-	      phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[grid->ctop[i]]*grid->Ac[i]);
+        if(prop->conserveMomentum)
+          for(k=grid->etop[ne];k<grid->ctop[i];k++)
+            phys->stmp[i][grid->ctop[i]]+=
+              phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[grid->ctop[i]]*grid->Ac[i]);
+        ASSERT_FINITE(phys->stmp[i][grid->ctop[i]]);
       }
     }
-
+    
     // Interpolate vc to faces and place into ut
     GetMomentumFaceValues(phys->ut,phys->vc,phys->boundary_v,phys->u,grid,phys,prop,comm,myproc,prop->nonlinear);
 
     // Conservative method assumes ut is a flux
     if(prop->conserveMomentum)
       for(jptr=grid->edgedist[0];jptr<grid->edgedist[5];jptr++) {
-	j=grid->edgep[jptr];
-
-	for(k=grid->etop[j];k<grid->Nke[j];k++)
-	  phys->ut[j][k]*=grid->dzf[j][k];
+        j=grid->edgep[jptr];
+        
+        for(k=grid->etop[j];k<grid->Nke[j];k++)
+          phys->ut[j][k]*=grid->dzf[j][k];
       }
 
     // Now compute the cell-centered source terms and put them into stmp.
@@ -1706,27 +1962,36 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
 
       // Store dzz in a since for conservative scheme need to divide by depth (since ut is a flux)
       if(prop->conserveMomentum) {
-	for(k=grid->ctop[i];k<grid->Nk[i];k++)
-	  a[k]=grid->dzz[i][k];
+        for(k=grid->ctop[i];k<grid->Nk[i];k++)
+          a[k]=grid->dzz[i][k];
       } else {
-	for(k=grid->ctop[i];k<grid->Nk[i];k++)
-	  a[k]=1.0;
+        for(k=grid->ctop[i];k<grid->Nk[i];k++)
+          a[k]=1.0;
       }
-
+      
       for(nf=0;nf<grid->nfaces[i];nf++) {
-
         ne = grid->face[i*grid->maxfaces+nf];
 
-        for(k=grid->ctop[i];k<grid->Nk[i];k++)
+        // for all but the top cell layer
+        // for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+        // RH 
+        for(k=max(grid->ctop[i],grid->etop[ne]);
+            k<grid->Nke[ne];
+            k++) {
           // Eqn 50, v-component
           phys->stmp2[i][k]+=
             phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[k]*grid->Ac[i]);
+          ASSERT_FINITE(phys->stmp2[i][k]);
+        }
 
         // Top cell is filled with momentum from neighboring cells
-	if(prop->conserveMomentum)
-	  for(k=grid->etop[ne];k<grid->ctop[i];k++) 
-	    phys->stmp2[i][grid->ctop[i]]+=
-	      phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[k]*grid->Ac[i]);
+        if(prop->conserveMomentum)
+          for(k=grid->etop[ne];k<grid->ctop[i];k++) {
+            phys->stmp2[i][grid->ctop[i]]+=
+              phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[k]*grid->Ac[i]);
+
+            ASSERT_FINITE(phys->stmp2[i][grid->ctop[i]]);
+          }
       }
     }
 
@@ -1738,67 +2003,71 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     // Only if thetaM<0, otherwise use implicit scheme in UPredictor()
 
     if(prop->thetaM<0) {
+
       // Now do vertical advection of momentum
       for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
-	i=grid->cellp[iptr];
-	switch(prop->nonlinear) {
+        i=grid->cellp[iptr];
+        switch(prop->nonlinear) {
         case 1:
           for(k=grid->ctop[i]+1;k<grid->Nk[i];k++) {
             a[k] = 0.5*((phys->w[i][k]+fabs(phys->w[i][k]))*phys->uc[i][k]+
-			(phys->w[i][k]-fabs(phys->w[i][k]))*phys->uc[i][k-1]);
+                        (phys->w[i][k]-fabs(phys->w[i][k]))*phys->uc[i][k-1]);
             b[k] = 0.5*((phys->w[i][k]+fabs(phys->w[i][k]))*phys->vc[i][k]+
-			(phys->w[i][k]-fabs(phys->w[i][k]))*phys->vc[i][k-1]);
+                        (phys->w[i][k]-fabs(phys->w[i][k]))*phys->vc[i][k-1]);
           }
           break;
         case 2: case 5:
           for(k=grid->ctop[i]+1;k<grid->Nk[i];k++) {
             a[k] = phys->w[i][k]*((grid->dzz[i][k-1]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->uc[i][k]+
-				   grid->dzz[i][k]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->uc[i][k-1]));
+                                   grid->dzz[i][k]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->uc[i][k-1]));
             b[k] = phys->w[i][k]*((grid->dzz[i][k-1]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->vc[i][k]+
-				   grid->dzz[i][k]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->vc[i][k-1]));
+                                   grid->dzz[i][k]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->vc[i][k-1]));
           }
           break;
         case 4:
           for(k=grid->ctop[i]+1;k<grid->Nk[i];k++) {
             Cz = 2.0*phys->w[i][k]*prop->dt/(grid->dzz[i][k]+grid->dzz[i][k-1]);
             a[k] = phys->w[i][k]*((grid->dzz[i][k-1]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->uc[i][k]+
-				   grid->dzz[i][k]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->uc[i][k-1])
-				  -0.5*Cz*(phys->uc[i][k-1]-phys->uc[i][k]));
+                                   grid->dzz[i][k]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->uc[i][k-1])
+                                  -0.5*Cz*(phys->uc[i][k-1]-phys->uc[i][k]));
             b[k] = phys->w[i][k]*((grid->dzz[i][k-1]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->vc[i][k]+
-				   grid->dzz[i][k]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->vc[i][k-1])
-				  -0.5*Cz*(phys->vc[i][k-1]-phys->vc[i][k]));
+                                   grid->dzz[i][k]/(grid->dzz[i][k]+grid->dzz[i][k-1])*phys->vc[i][k-1])
+                                  -0.5*Cz*(phys->vc[i][k-1]-phys->vc[i][k]));
           }
           break;
         default:
           for(k=grid->ctop[i]+1;k<grid->Nk[i];k++) {
             a[k] = 0.5*((phys->w[i][k]+fabs(phys->w[i][k]))*phys->uc[i][k]+
-			(phys->w[i][k]-fabs(phys->w[i][k]))*phys->uc[i][k-1]);
+                        (phys->w[i][k]-fabs(phys->w[i][k]))*phys->uc[i][k-1]);
             b[k] = 0.5*((phys->w[i][k]+fabs(phys->w[i][k]))*phys->vc[i][k]+
-			(phys->w[i][k]-fabs(phys->w[i][k]))*phys->vc[i][k-1]);
+                        (phys->w[i][k]-fabs(phys->w[i][k]))*phys->vc[i][k-1]);
           }
           break;
-	}
-	
-	// Always do first-order upwind in bottom cell if partial stepping is on
-	if(prop->stairstep==0 && grid->Nk[i]>1) {
-	  k = grid->Nk[i]-1;
-	  a[k] = 0.5*(
-		      (phys->w[i][k]+fabs(phys->w[i][k]))*phys->uc[i][k]+
-		      (phys->w[i][k]-fabs(phys->w[i][k]))*phys->uc[i][k-1]);
-	  b[k] = 0.5*(
-		      (phys->w[i][k]+fabs(phys->w[i][k]))*phys->vc[i][k]+
-		      (phys->w[i][k]-fabs(phys->w[i][k]))*phys->vc[i][k-1]);
-	}
-	
-	a[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->uc[i][grid->ctop[i]];
-	b[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->vc[i][grid->ctop[i]];
-	a[grid->Nk[i]]=0;
-	b[grid->Nk[i]]=0;
-	
-	for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-	  phys->stmp[i][k]+=(a[k]-a[k+1])/grid->dzz[i][k];
-	  phys->stmp2[i][k]+=(b[k]-b[k+1])/grid->dzz[i][k];
-	}
+        }
+        
+        // Always do first-order upwind in bottom cell if partial stepping is on
+        if(prop->stairstep==0 && grid->Nk[i]>1) {
+          k = grid->Nk[i]-1;
+          a[k] = 0.5*(
+                      (phys->w[i][k]+fabs(phys->w[i][k]))*phys->uc[i][k]+
+                      (phys->w[i][k]-fabs(phys->w[i][k]))*phys->uc[i][k-1]);
+          b[k] = 0.5*(
+                      (phys->w[i][k]+fabs(phys->w[i][k]))*phys->vc[i][k]+
+                      (phys->w[i][k]-fabs(phys->w[i][k]))*phys->vc[i][k-1]);
+        }
+        
+        a[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->uc[i][grid->ctop[i]];
+        b[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->vc[i][grid->ctop[i]];
+        a[grid->Nk[i]]=0;
+        b[grid->Nk[i]]=0;
+        
+        for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+          phys->stmp[i][k]+=(a[k]-a[k+1])/grid->dzz[i][k];
+          phys->stmp2[i][k]+=(b[k]-b[k+1])/grid->dzz[i][k];
+
+          ASSERT_FINITE(phys->stmp[i][k]);
+          ASSERT_FINITE(phys->stmp2[i][k]);
+        }
       }
     } // end of nonlinear computation
   }
@@ -1861,6 +2130,9 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
       phys->stmp[nc2][k]+=a[k]/grid->Ac[nc2];
       phys->stmp2[nc1][k]-=b[k]/grid->Ac[nc1];
       phys->stmp2[nc2][k]+=b[k]/grid->Ac[nc2];
+
+      ASSERT_FINITE(phys->stmp[nc1][k]);
+      ASSERT_FINITE(phys->stmp[nc2][k]);
     }
 
     // compute wall-drag for diffusion of momentum BC (only on side walls)
@@ -1923,6 +2195,9 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
       }
     }
     sum=1/sum;
+
+    assert(sum==sum);
+
     for(k=grid->ctop[nc2];k<grid->Nk[nc2];k++) {
       // area-averaged calc
       phys->stmp[i][k]*=sum;
@@ -1963,6 +2238,26 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     for(k=k0;k<grid->Nk[nc2];k++) 
       phys->Cn_U[j][k]-=def2/dgf
         *prop->dt*(phys->stmp[nc2][k]*grid->n1[j]+phys->stmp2[nc2][k]*grid->n2[j]);
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+    if(myproc==DBG_PROC && j==DBG_EDGE) {
+      printf("\nCn_U updated from cell %d\n",nc1);
+      for(k=k0;k<grid->Nk[nc1];k++) {
+        printf("  [p=%d j=%d k=% 2d c=% 2d] delta Cn_U=%.9f  stmp=%.5f, stmp2=%.5f\n",
+               myproc, j, k, nc1,
+               -def1/dgf*prop->dt*(phys->stmp[nc1][k]*grid->n1[j]+phys->stmp2[nc1][k]*grid->n2[j]),
+               phys->stmp[nc1][k], phys->stmp2[nc1][k]);
+      }
+      printf("\nCn_U updated from cell %d\n",nc2);
+      for(k=k0;k<grid->Nk[nc2];k++) {
+        printf("  [p=%d j=%d k=% 2d c=% 2d] delta Cn_U=%.9f   stmp=%.5f, stmp2=%.5f\n",
+               myproc, j, k, nc2,
+               def2/dgf*prop->dt*(phys->stmp[nc2][k]*grid->n1[j]+phys->stmp2[nc2][k]*grid->n2[j]),
+               phys->stmp[nc2][k],phys->stmp2[nc2][k]);
+      }
+    }
+#endif
+
   }
 
   // Now add on stmp and stmp2 from the boundaries 
@@ -1996,6 +2291,17 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     for(k=grid->etop[j];k<grid->Nke[j];k++)
       phys->utmp[j][k]+=fab1*phys->Cn_U[j][k];
   }
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+    if(myproc==DBG_PROC) {
+      printf("\nutmp update due to rest of HorizontalSource\n");
+      for(k=grid->etop[DBG_EDGE];k<grid->Nke[DBG_EDGE];k++) {
+        printf("[p=%d j=%d k=% 3d] fab1*Cn_U=%.9f\n",
+               myproc, DBG_EDGE, k, phys->Cn_U[DBG_EDGE][k]);
+      }
+    }
+#endif
+
 //  // check to make sure we don't have a blow-up
 //  for(j=0;j<grid->Ne;j++) 
 //    for(k=grid->etop[j];k<grid->Nke[j];k++) 
@@ -2026,20 +2332,21 @@ static void NewCells(gridT *grid, physT *phys, propT *prop) {
   for(jptr=grid->edgedist[0];jptr<grid->edgedist[1];jptr++) {
     j = grid->edgep[jptr];
 
-    if(grid->etop[j]<grid->Nke[j]-1) {    // Only update new cells if there is more than one layer
+    if( grid->etop[j]<grid->Nke[j]-1 ) {    // Only update new cells if there is more than one layer
 
       // If a new cell is created above the old cell then set the velocity in the new cell equal to that in
       // the old one.
       //
       // Otherwise if the free surface jumps up more than one cell then set the velocity equal to the cell beneath
       // the old one.
-
-      if(grid->etop[j]==grid->etopold[j]-1) {
-	phys->u[j][grid->etop[j]]=phys->u[j][grid->etopold[j]];
-      } else { 
-	for(k=grid->etop[j];k<=grid->etopold[j];k++)
-	  phys->u[j][k]=phys->u[j][grid->etopold[j]+1];
-      }
+      // 2018-08-15 RH: changed the logic so to only treat new cells
+      // when etop<etopold.  before this would always overwrite the top layer, and also
+      // appeared to have a bounds issue using grid->etopold[j]+1 without checking that that
+      // layer exists.
+      // the logic behind choosing a layer below etopold is not clear to me, so I'm switching this
+      // to just use phys->u[j][grid->etopold[j]]
+      for(k=grid->etop[j];k<grid->etopold[j];k++)
+        phys->u[j][k]=phys->u[j][grid->etopold[j]];
     }
   }
 }
@@ -2618,6 +2925,7 @@ static void UPredictor(gridT *grid, physT *phys,
     propT *prop, int myproc, int numprocs, MPI_Comm comm)
 {
   int i, iptr, j, jptr, ne, nf, nf1, normal, nc1, nc2, k, n0, n1;
+  int kk; // for debugging tridiagonal system
   REAL sum, dt=prop->dt, theta=prop->theta, h0, boundary_flag;
   REAL *a, *b, *c, *d, *e1, **E, *a0, *b0, *c0, *d0, theta0, alpha;
 
@@ -2666,9 +2974,21 @@ static void UPredictor(gridT *grid, physT *phys,
 
     // Add the explicit part of the free-surface to create U**.
     // 5th term of Eqn 31
-    for(k=grid->etop[j];k<grid->Nke[j];k++) 
+    for(k=grid->etop[j];k<grid->Nke[j];k++) {
       phys->utmp[j][k]-=
         prop->grav*(1-theta)*dt*(phys->h[nc1]-phys->h[nc2])/grid->dg[j];
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+      if(myproc==DBG_PROC && j==DBG_EDGE) {
+        if(k==grid->etop[j])
+          printf("\nexplicit freesurface addition to utmp\n");
+        printf("[p=%d j=%d k=% 3d] delta utmp=%.9f\n",
+               myproc, DBG_EDGE, k,
+               -prop->grav*(1-theta)*dt*(phys->h[nc1]-phys->h[nc2])/grid->dg[j]
+               );
+      }
+#endif
+    }
   }
 
   // Drag term must be fully implicit
@@ -2718,6 +3038,16 @@ static void UPredictor(gridT *grid, physT *phys,
             prop->laxWendroff_Vertical*(phys->nu_lax[nc1][k-1]+phys->nu_lax[nc2][k-1]+
               phys->nu_lax[nc1][k]+phys->nu_lax[nc2][k]));
 
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+      if(myproc==DBG_PROC && j==DBG_EDGE) {
+        printf("[p=%d j=%d] interpolated eddy viscosity\n",myproc,j);
+        for(k=grid->etop[j]+1;k<grid->Nke[j];k++) {
+          printf("   k=% 2d    nu_tv=c=%.5f\n",k,c[k]);
+        }
+      }
+#endif
+
+
       // Coefficients for the viscous terms.  Face heights are taken as
       // the average of the face heights on either side of the face (not upwinded).
       for(k=grid->etop[j]+1;k<grid->Nke[j];k++) 
@@ -2734,116 +3064,218 @@ static void UPredictor(gridT *grid, physT *phys,
       // Coefficients for vertical momentum advection terms
       // d[] stores vertical velocity interpolated to faces vertically half-way between U locations
       // So d[k] contains w defined at the vertical w-location of cell k
+      // RH: further restrict this to  nonhydrostatic cases.  Possibly overkill, but
+      // in flow with barotropic forcing creating downslope flow, there is the
+      // possibility of a positive feedback (w<0, so barotropic forcing is preferentially
+      // put into lower layers due to E[bed] > E[surface], which evacuates more water
+      // from lower layers, driving even more negative w.  physically, this would
+      // be damped somewhat by non-hydrostatic inertia.
+      // to avoid changing too much code, still setting a0,b0,c0, but below they are not used
+      // at least not if thetaM=1.
+      // TL;DR: rusty is punting by disabling vertical advection in hydrostatic runs.
       if(prop->nonlinear && prop->thetaM>=0 && grid->Nke[j]-grid->etop[j]>1) {
-	if(grid->ctop[nc1]>grid->ctop[nc2]) {
-	  n0=nc2;
-	  n1=nc1;
-	} else {
-	  n0=nc1;
-	  n1=nc2;
-	}
-	// Don't do advection on vertical faces without water on both sides.
-	for(k=0;k<grid->ctop[n1];k++)
-	  d[k]=0;
-	for(k=grid->ctop[n1];k<grid->Nke[j];k++)
-	  d[k] = 0.5*(phys->w[n0][k]+phys->w[n1][k]);
-	d[grid->Nke[j]]=0; // Assume w=0 at a corners (even if w is nonzero on one side of the face)
-
-	for(k=grid->etop[j];k<grid->Nke[j];k++) {
-	  a0[k] = (alpha*0.5*(d[k]-fabs(d[k])) + 0.5*(1-alpha)*d[k])/(0.5*(grid->dzz[nc1][k]+grid->dzz[nc2][k]));
-	  b0[k] = (alpha*0.5*(d[k]+fabs(d[k])-d[k+1]+fabs(d[k+1]))+0.5*(1-alpha)*(d[k]-d[k+1]))/(0.5*(grid->dzz[nc1][k]+grid->dzz[nc2][k]));
-	  c0[k] = -(alpha*0.5*(d[k+1]+fabs(d[k+1])) + 0.5*(1-alpha)*d[k+1])/(0.5*(grid->dzz[nc1][k]+grid->dzz[nc2][k]));
-	}
+        if( prop->nonhydrostatic ) {
+          // original
+          if(grid->ctop[nc1]>grid->ctop[nc2]) {
+            n0=nc2;
+            n1=nc1;
+          } else {
+            n0=nc1;
+            n1=nc2;
+          }
+          // Don't do advection on vertical faces without water on both sides.
+          for(k=0;k<grid->ctop[n1];k++)
+            d[k]=0;
+          for(k=grid->ctop[n1];k<grid->Nke[j];k++)
+            d[k] = 0.5*(phys->w[n0][k]+phys->w[n1][k]);
+          d[grid->Nke[j]]=0; // Assume w=0 at a corners (even if w is nonzero on one side of the face)
+          
+          for(k=grid->etop[j];k<grid->Nke[j];k++) {
+            a0[k] = (alpha*0.5*(d[k]-fabs(d[k])) + 0.5*(1-alpha)*d[k])/(0.5*(grid->dzz[nc1][k]+grid->dzz[nc2][k]));
+            b0[k] = (alpha*0.5*(d[k]+fabs(d[k])-d[k+1]+fabs(d[k+1]))+0.5*(1-alpha)*(d[k]-d[k+1]))/(0.5*(grid->dzz[nc1][k]+grid->dzz[nc2][k]));
+            c0[k] = -(alpha*0.5*(d[k+1]+fabs(d[k+1])) + 0.5*(1-alpha)*d[k+1])/(0.5*(grid->dzz[nc1][k]+grid->dzz[nc2][k]));
+          }
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+          if(myproc==DBG_PROC && j==DBG_EDGE) {
+            printf("[p=%d j=%d] vertical advection\n",myproc,j);
+            for(k=grid->etop[j];k<=grid->Nke[j];k++) {
+              printf("   k=% 2d    a0=%.5f b0=%.5f  c0=%.5f  d=%.5f w[n0]=%.5f w[n1]=%.5f \n",
+                     k,a0[k],b0[k],c0[k],d[k],phys->w[n0][k],phys->w[n1][k]);
+            }
+          }
+#endif
+        } else { // hydrostatic
+          for(k=grid->etop[j];k<grid->Nke[j];k++) {
+            a0[k] = 0.0;
+            b0[k] = 0.0;
+            c0[k] = 0.0;
+          }
+        }
       }
 
       // add on explicit diffusion to RHS (utmp)
-      if(grid->Nke[j]-grid->etop[j]>1) { // more than one vertical layer on edge
+      if ( theta!=1 ) { // drag forced fully implicit above, so skip stanza below
+        if(grid->Nke[j]-grid->etop[j]>1) { // more than one vertical layer on edge
 
-        // Explicit part of the viscous term over wetted parts of edge
-        // for the interior cells
-        for(k=grid->etop[j]+1;k<grid->Nke[j]-1;k++)
-          phys->utmp[j][k]+=dt*(1-theta)*(a[k]*phys->u[j][k-1]-
-              (a[k]+b[k])*phys->u[j][k]+
-              b[k]*phys->u[j][k+1]);
+          // Explicit part of the viscous term over wetted parts of edge
+          // for the interior cells
+          for(k=grid->etop[j]+1;k<grid->Nke[j]-1;k++) {
+            phys->utmp[j][k]+=dt*(1-theta)*(a[k]*phys->u[j][k-1]-
+                                            (a[k]+b[k])*phys->u[j][k]+
+                                            b[k]*phys->u[j][k+1]);
+            
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+            if(myproc==DBG_PROC && j==DBG_EDGE) {
+              printf("[p=%d j=%d k=% 3d] explicit vertical visc. delta utmp=%.9f\n",
+                     myproc, DBG_EDGE, k,
+                     dt*(1-theta)*(a[k]*phys->u[j][k-1]-
+                                   (a[k]+b[k])*phys->u[j][k]+
+                                   b[k]*phys->u[j][k+1])
+                     );
+            }
+#endif
 
-        // Top cell
-        // account for no slip conditions which are assumed if CdT = -1 
-        if(phys->CdT[j] == -1){ // no slip on top
-          phys->utmp[j][grid->etop[j]]+=
-            dt*(1-theta)*(a[grid->etop[j]]*-phys->u[j][grid->etop[j]]-
-              (a[grid->etop[j]]+b[grid->etop[j]])*phys->u[j][grid->etop[j]]+
-              b[grid->etop[j]]*phys->u[j][grid->etop[j]+1]);
-        }
-        else{ // standard drag law code
-          phys->utmp[j][grid->etop[j]]+=dt*(1-theta)*(-(b[grid->etop[j]]+2.0*phys->CdT[j]*
-                fabs(phys->u[j][grid->etop[j]])/
-                (grid->dzz[nc1][grid->etop[j]]+
-                 grid->dzz[nc2][grid->etop[j]]))*
-              phys->u[j][grid->etop[j]]
-              +b[grid->etop[j]]*phys->u[j][grid->etop[j]+1]);
-        }
+          }
 
-        // Bottom cell
-        // account for no slip conditions which are assumed if CdB = -1
-        if(phys->CdB[j] == -1){ // no slip on bottom
-         // some sort of strange error here... in previous code, now fixed 
-//          phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*(phys->CdB[j]+phys->CdT[j])/
-//            (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
-//            fabs(phys->u[j][grid->etop[j]])*phys->u[j][grid->etop[j]];
-          phys->utmp[j][grid->Nke[j]-1]+=dt*(1-theta)*(a[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2]-
-              (a[grid->Nke[j]-1]+b[grid->Nke[j]-1])*phys->u[j][grid->Nke[j]-1]+
-              b[grid->Nke[j]-1]*-phys->u[j][grid->Nke[j]-1]);
+          // Top cell
+          // account for no slip conditions which are assumed if CdT = -1
+          if(phys->CdT[j] == -1){ // no slip on top
+            phys->utmp[j][grid->etop[j]]+=
+              dt*(1-theta)*(a[grid->etop[j]]*-phys->u[j][grid->etop[j]]-
+                            (a[grid->etop[j]]+b[grid->etop[j]])*phys->u[j][grid->etop[j]]+
+                            b[grid->etop[j]]*phys->u[j][grid->etop[j]+1]);
+          } else { // standard drag law code
+            phys->utmp[j][grid->etop[j]]+=dt*(1-theta)*(-(b[grid->etop[j]]+2.0*phys->CdT[j]*
+                                                          fabs(phys->u[j][grid->etop[j]])/
+                                                          (grid->dzz[nc1][grid->etop[j]]+
+                                                           grid->dzz[nc2][grid->etop[j]]))*
+                                                        phys->u[j][grid->etop[j]]
+                                                        +b[grid->etop[j]]*phys->u[j][grid->etop[j]+1]);
+            
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+            if(myproc==DBG_PROC && j==DBG_EDGE) {
+              printf("[p=%d j=%d k=% 3d] top explicit vertical visc. delta utmp=%.9f\n",
+                     myproc, DBG_EDGE, grid->etop[j],
+                     dt*(1-theta)*(-(b[grid->etop[j]]+2.0*phys->CdT[j]*
+                                     fabs(phys->u[j][grid->etop[j]])/
+                                     (grid->dzz[nc1][grid->etop[j]]+
+                                      grid->dzz[nc2][grid->etop[j]]))*
+                                   phys->u[j][grid->etop[j]]
+                                   +b[grid->etop[j]]*phys->u[j][grid->etop[j]+1])
+                     );
+            }
+#endif
+          }
 
+          // Bottom cell
+          // account for no slip conditions which are assumed if CdB = -1
+          if(phys->CdB[j] == -1){ // no slip on bottom
+            // some sort of strange error here... in previous code, now fixed 
+            //          phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*(phys->CdB[j]+phys->CdT[j])/
+            //            (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
+            //            fabs(phys->u[j][grid->etop[j]])*phys->u[j][grid->etop[j]];
+            phys->utmp[j][grid->Nke[j]-1]+=dt*(1-theta)*(a[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2]-
+                                                         (a[grid->Nke[j]-1]+b[grid->Nke[j]-1])*phys->u[j][grid->Nke[j]-1]+
+                                                         b[grid->Nke[j]-1]*-phys->u[j][grid->Nke[j]-1]);
+            
+          } else { // standard drag law code
+            phys->utmp[j][grid->Nke[j]-1]+=dt*(1-theta)*
+              (
+               a[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2] -
+               (a[grid->Nke[j]-1] 
+                + 2.0*phys->CdB[j]*fabs(phys->u[j][grid->Nke[j]-1])/
+                (grid->dzz[nc1][grid->Nke[j]-1]+
+                 grid->dzz[nc2][grid->Nke[j]-1]))*
+               phys->u[j][grid->Nke[j]-1]
+               );
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+            if(myproc==DBG_PROC && j==DBG_EDGE) {
+              printf("[p=%d j=%d k=% 3d] CdB=%.4f theta=%.2f bot explicit vertical visc. delta utmp=%.9f\n",
+                     myproc, DBG_EDGE, grid->Nke[j]-1,
+                     phys->CdB[j],theta,
+                     dt*(1-theta)*(
+                                   a[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2] -
+                                   (a[grid->Nke[j]-1]
+                                    + 2.0*phys->CdB[j]*fabs(phys->u[j][grid->Nke[j]-1])/
+                                    (grid->dzz[nc1][grid->Nke[j]-1]+
+                                     grid->dzz[nc2][grid->Nke[j]-1]))*
+                                   phys->u[j][grid->Nke[j]-1])
+                     );
+            }
+#endif
+          }
+        } else{  // one layer for edge
+          // drag on bottom boundary
+          if(phys->CdB[j] == -1){ // no slip on bottom
+            phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*
+              (2.0*(2.0*(prop->nu + c[k]))*phys->u[j][grid->etop[j]]/
+               ((grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
+                (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])));
+          } else { // standard drag law formation on bottom
+            phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*
+              (phys->CdB[j])/
+              (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
+              fabs(phys->u[j][grid->etop[j]])*phys->u[j][grid->etop[j]];
+          }
+          // drag on top boundary
+          if(phys->CdT[j] == -1){ // no slip on top
+            phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*
+              (2.0*(2.0*(prop->nu + c[k]))*phys->u[j][grid->etop[j]]/
+               ((grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
+                (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])));
+          } else { // standard drag law formulation on top
+            phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*(phys->CdT[j])/
+              (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
+              fabs(phys->u[j][grid->etop[j]])*phys->u[j][grid->etop[j]];
+          }
         }
-        else{ // standard drag law code
-          phys->utmp[j][grid->Nke[j]-1]+=dt*(1-theta)*(
-              a[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2] -
-              (a[grid->Nke[j]-1] 
-               + 2.0*phys->CdB[j]*fabs(phys->u[j][grid->Nke[j]-1])/
-               (grid->dzz[nc1][grid->Nke[j]-1]+
-                grid->dzz[nc2][grid->Nke[j]-1]))*
-              phys->u[j][grid->Nke[j]-1]);
-        }
-      } 
-      else{  // one layer for edge
-        // drag on bottom boundary
-        if(phys->CdB[j] == -1){ // no slip on bottom
-          phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*(
-              2.0*(2.0*(prop->nu + c[k]))*phys->u[j][grid->etop[j]]/
-              ((grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
-               (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])));
-        }
-        else{ // standard drag law formation on bottom
-          phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*(phys->CdB[j])/
-            (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
-            fabs(phys->u[j][grid->etop[j]])*phys->u[j][grid->etop[j]];
-        }
-        // drag on top boundary
-        if(phys->CdT[j] == -1){ // no slip on top
-          phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*(
-              2.0*(2.0*(prop->nu + c[k]))*phys->u[j][grid->etop[j]]/
-              ((grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
-               (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])));
-        }
-        else{ // standard drag law formulation on top
-          phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*(phys->CdT[j])/
-            (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
-            fabs(phys->u[j][grid->etop[j]])*phys->u[j][grid->etop[j]];
-        }
-      }
+      } // end of drag-related theta!=1 block.
 
       // add on explicit vertical momentum advection only if there is more than one vertical layer edge.
       if(prop->nonlinear && prop->thetaM>=0 && grid->Nke[j]-grid->etop[j]>1) {
-	for(k=grid->etop[j]+1;k<grid->Nke[j]-1;k++)
-	  phys->utmp[j][k]-=prop->dt*(1-prop->thetaM)*(a0[k]*phys->u[j][k-1]+b0[k]*phys->u[j][k]+c0[k]*phys->u[j][k+1]);
-	
-	// Top boundary
-	phys->utmp[j][grid->etop[j]]-=prop->dt*(1-prop->thetaM)*((a0[grid->etop[j]]+b0[grid->etop[j]])*phys->u[j][grid->etop[j]]
-								 +c0[grid->etop[j]]*phys->u[j][grid->etop[j]+1]);
-	
-	// Bottom boundary
-	phys->utmp[j][grid->Nke[j]-1]-=prop->dt*(1-prop->thetaM)*(a0[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2]
-								  +(b0[grid->Nke[j]-1]+c0[grid->Nke[j]-1])*phys->u[j][grid->Nke[j]-1]);
+        for(k=grid->etop[j]+1;k<grid->Nke[j]-1;k++) {
+          phys->utmp[j][k]-=prop->dt*(1-prop->thetaM)*(a0[k]*phys->u[j][k-1]+b0[k]*phys->u[j][k]+c0[k]*phys->u[j][k+1]);
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+          if(myproc==DBG_PROC && j==DBG_EDGE) {
+            printf("[p=%d j=%d k=% 3d] explicit vertical adv delta utmp=%.9f\n",
+                   myproc, DBG_EDGE, k,
+                   -prop->dt*(1-prop->thetaM)*(a0[k]*phys->u[j][k-1]+b0[k]*phys->u[j][k]+c0[k]*phys->u[j][k+1])
+                   );
+          }
+#endif
+        }
+
+        // Top boundary
+        phys->utmp[j][grid->etop[j]]-=prop->dt*(1-prop->thetaM)*((a0[grid->etop[j]]+b0[grid->etop[j]])*phys->u[j][grid->etop[j]]
+                                                                 +c0[grid->etop[j]]*phys->u[j][grid->etop[j]+1]);
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+        if(myproc==DBG_PROC && j==DBG_EDGE) {
+          printf("[p=%d j=%d k=% 3d] top explicit vertical adv delta utmp=%.9f\n",
+                 myproc, DBG_EDGE, grid->etop[j],
+                 -prop->dt*(1-prop->thetaM)*((a0[grid->etop[j]]+b0[grid->etop[j]])*phys->u[j][grid->etop[j]]
+                                             +c0[grid->etop[j]]*phys->u[j][grid->etop[j]+1])
+                 );
+        }
+#endif
+
+        // Bottom boundary
+        phys->utmp[j][grid->Nke[j]-1]-=prop->dt*(1-prop->thetaM)
+          *(a0[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2]
+            +(b0[grid->Nke[j]-1]+c0[grid->Nke[j]-1])*phys->u[j][grid->Nke[j]-1]);
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+        if(myproc==DBG_PROC && j==DBG_EDGE) {
+          printf("[p=%d j=%d k=% 3d] bot explicit vertical adv delta utmp=%.9f\n",
+                 myproc, DBG_EDGE, grid->Nke[j]-1,
+                 -prop->dt*(1-prop->thetaM)
+                 *(a0[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2]
+                   +(b0[grid->Nke[j]-1]+c0[grid->Nke[j]-1])*phys->u[j][grid->Nke[j]-1])
+                 );
+        }
+#endif
       }
 
       // Now set up the coefficients for the tridiagonal inversion for the
@@ -2870,11 +3302,11 @@ static void UPredictor(gridT *grid, physT *phys,
               (grid->dzz[nc1][grid->etop[j]]+
                grid->dzz[nc2][grid->etop[j]]));
         }
-        a[grid->etop[j]]=0;     // set a_1=0 (not used in tridiag solve)
+        a[grid->etop[j]]=INFINITY;     // set a_1=inf (not used in tridiag solve, this will keep us honest)
 
         // Bottom cell
-        c[grid->Nke[j]-1]=0;   // set c_N=0 (not used in tridiag solve)
-        // account for no slip conditions which are assumed if CdB = -1  
+        c[grid->Nke[j]-1]=INFINITY;   // set c_N=inf (not used in tridiag solve, this will keep us honest)
+        // account for no slip conditions which are assumed if CdB = -1
         if(phys->CdB[j] == -1){ // no slip
           b[grid->Nke[j]-1]=1.0+theta*dt*(a[grid->Nke[j]-1]+b[grid->Nke[j]-1]+b[grid->Nke[j]-2]);
         }
@@ -2916,24 +3348,41 @@ static void UPredictor(gridT *grid, physT *phys,
             (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
             (phys->CdT[j]);
         }
+      }
 
-      }	  
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+      if(myproc==DBG_PROC && j==DBG_EDGE) {
+        printf("[p=%d j=%d] tri-diagonal system before vertical adv of u-mom\n",myproc,j);
+        for(k=grid->etop[j];k<grid->Nke[j];k++ ) { // rows
+          for(kk=grid->etop[j];kk<grid->Nke[j];kk++ ) { // columns
+            if (kk==k-1) printf(" % .4f",a[k]); // unsure
+            else if (kk==k  ) printf(" % .4f",b[k]);
+            else if (kk==k+1) printf(" % .4f",c[k]); // unsure
+            else printf(" %.4f",0.0);
+          }
+          printf("  u[k=% 2d] = d %.9f\n",k,d[k]);
+        }
+        printf("\n");
+      }
+#endif
+
 
       // Now add on implicit terms for vertical momentum advection, only if there is more than one layer
-      if(prop->nonlinear && prop->thetaM>=0 && grid->Nke[j]-grid->etop[j]>1) {
-	for(k=grid->etop[j]+1;k<grid->Nke[j]-1;k++) {
-	  a[k]+=prop->dt*prop->thetaM*a0[k];
-	  b[k]+=prop->dt*prop->thetaM*b0[k];
-	  c[k]+=prop->dt*prop->thetaM*c0[k];
-	}
-
-	// Top boundary
-	b[grid->etop[j]]+=prop->dt*prop->thetaM*(a0[grid->etop[j]]+b0[grid->etop[j]]);
-	c[grid->etop[j]]+=prop->dt*prop->thetaM*c0[grid->etop[j]];
-	
-	// Bottom boundary 
-	a[grid->Nke[j]-1]+=prop->dt*prop->thetaM*a0[grid->Nke[j]-1];
-	b[grid->Nke[j]-1]+=prop->dt*prop->thetaM*(b0[grid->Nke[j]-1]+c0[grid->Nke[j]-1]);
+      // RH: see above -- disabling this for hydrostatic runs.
+      if(prop->nonhydrostatic && prop->nonlinear && prop->thetaM>=0 && grid->Nke[j]-grid->etop[j]>1) {
+        for(k=grid->etop[j]+1;k<grid->Nke[j]-1;k++) {
+          a[k]+=prop->dt*prop->thetaM*a0[k];
+          b[k]+=prop->dt*prop->thetaM*b0[k];
+          c[k]+=prop->dt*prop->thetaM*c0[k];
+        }
+        
+        // Top boundary
+        b[grid->etop[j]]+=prop->dt*prop->thetaM*(a0[grid->etop[j]]+b0[grid->etop[j]]);
+        c[grid->etop[j]]+=prop->dt*prop->thetaM*c0[grid->etop[j]];
+        
+        // Bottom boundary 
+        a[grid->Nke[j]-1]+=prop->dt*prop->thetaM*a0[grid->Nke[j]-1];
+        b[grid->Nke[j]-1]+=prop->dt*prop->thetaM*(b0[grid->Nke[j]-1]+c0[grid->Nke[j]-1]);
       }
 
       for(k=grid->etop[j];k<grid->Nke[j];k++) {
@@ -2948,7 +3397,7 @@ static void UPredictor(gridT *grid, physT *phys,
       }
 
       // Now utmp will have U*** in it, which is given by A^{-1}U**, and E will have
-      // A^{-1}e1, where e1 = [1,1,1,1,1,...,1]^T 
+      // A^{-1}e1, where e1 = [1,1,1,1,1,...,1]^T
       // Store the tridiagonals so they can be used twice (TriSolve alters the values
       // of the elements in the diagonals!!!
       for(k=0;k<grid->Nke[j];k++) {
@@ -2956,6 +3405,24 @@ static void UPredictor(gridT *grid, physT *phys,
         b0[k]=b[k];
         c0[k]=c[k];
       }
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+      if(myproc==DBG_PROC && j==DBG_EDGE) {
+        printf("[p=%d j=%d] CdT=%.4f CdB=%.4f\n",myproc,j,phys->CdT[j],phys->CdB[j]);
+        printf("[p=%d j=%d] tri-diagonal system\n",myproc,j);
+        for(k=grid->etop[j];k<grid->Nke[j];k++ ) { // rows
+          for(kk=grid->etop[j];kk<grid->Nke[j];kk++ ) { // columns
+            if (kk==k-1) printf(" % .4f",a[k]); // unsure
+            else if (kk==k  ) printf(" % .4f",b[k]);
+            else if (kk==k+1) printf(" % .4f",c[k]); // unsure
+            else printf(" %.4f",0.0);
+          }
+          printf("  u[k=% 2d] = utmp %.9f  d %.9f\n",k,phys->utmp[j][k],d[k]);
+        }
+        printf("\n");
+      }
+#endif
+
       if(grid->Nke[j]-grid->etop[j]>1) { // more than one layer (z level)
         TriSolve(&(a[grid->etop[j]]),&(b[grid->etop[j]]),&(c[grid->etop[j]]),
             &(d[grid->etop[j]]),&(phys->utmp[j][grid->etop[j]]),grid->Nke[j]-grid->etop[j]);
@@ -2966,6 +3433,8 @@ static void UPredictor(gridT *grid, physT *phys,
         E[j][grid->etop[j]]=1.0/b[grid->etop[j]];
       }
 
+
+
       // Now vertically integrate E to create the vertically integrated flux-face
       // values that comprise the coefficients of the free-surface solver.  This
       // will create the D vector, where D=DZ^T E (which should be given by the
@@ -2973,23 +3442,53 @@ static void UPredictor(gridT *grid, physT *phys,
       phys->D[j]=0;
       for(k=grid->etop[j];k<grid->Nke[j];k++) 
         phys->D[j]+=E[j][k]*grid->dzf[j][k];
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+      if(myproc==DBG_PROC && j==DBG_EDGE) {
+        printf("[p=%d j=%d] tri-diagonal system output\n",myproc,j);
+        for(k=grid->etop[j];k<grid->Nke[j];k++ ) { // rows
+          printf("  utmp[k=% 2d]=%.9f  E[k=% 2d]=%.4f  dzf[k=% 2d]=%.5f\n",
+                 k,phys->utmp[j][k],
+                 k,E[j][k],
+                 k,grid->dzf[j][k]);
+        }
+        // is D actually greater than actual depth?
+        printf("   D[j] ends up %.5f\n",phys->D[j]);
+        printf("\n");
+      }
+#endif
+
     }
   }
   theta=theta0;
 
-  for(j=0;j<grid->Ne;j++) 
-    for(k=grid->etop[j];k<grid->Nke[j];k++) 
+  for(j=0;j<grid->Ne;j++) {
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+    if(myproc==DBG_PROC && j==DBG_EDGE) {
+      for(k=grid->etop[j];k<grid->Nke[j];k++)  {
+        printf("[p=%d j=%d k=% 3d] after implicit vertical solve utmp=%.9f\n",
+               myproc, DBG_EDGE, k,
+               phys->utmp[j][k]
+               );
+      }
+    }
+#endif
+
+    for(k=grid->etop[j];k<grid->Nke[j];k++) {
       if(phys->utmp[j][k]!=phys->utmp[j][k]) {
-        printf("Error in function Predictor at j=%d k=%d (U***=nan)\n",j,k);
+        printf("[p=%d] Error in function Predictor at j=%d k=%d (U***=nan)\n",myproc,j,k);
         exit(EXIT_FAILURE);
       }
+    }
+  }
 
   // So far we have U*** and D.  Now we need to create h* in htmp.   This
   // will comprise the source term for the free-surface solver.  Before we
   // do this we need to set the new velocity at the open boundary faces and
   // place them into utmp.  
   BoundaryVelocities(grid,phys,prop,myproc,comm);
-  OpenBoundaryFluxes(NULL,phys->utmp,NULL,grid,phys,prop);
+  OpenBoundaryFluxes(NULL,phys->utmp,NULL,grid,phys,prop,myproc);
 
   // for computational cells
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
@@ -3054,20 +3553,49 @@ static void UPredictor(gridT *grid, physT *phys,
     nc1 = grid->grad[2*j];
     nc2 = grid->grad[2*j+1];
 
-    for(k=grid->etop[j];k<grid->Nke[j];k++) 
+    for(k=grid->etop[j];k<grid->Nke[j];k++) {
       phys->u[j][k]=phys->utmp[j][k]-prop->grav*theta*dt*E[j][k]*
         (phys->h[nc1]-phys->h[nc2])/grid->dg[j];
+
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+      if(myproc==DBG_PROC && j==DBG_EDGE) {
+        printf("[p=%d j=%d k=% 3d] implicit fs delta=%.9f  u=%.9f E=%.5f\n",
+               myproc, DBG_EDGE, k,
+               -prop->grav*theta*dt*E[j][k]*
+               (phys->h[nc1]-phys->h[nc2])/grid->dg[j],
+               phys->u[j][k], E[j][k]
+               );
+      }
+#endif
+    }
 
     // set dry cells (with zero height) to have zero velocity
     if( grid->etop[j]==grid->Nke[j]-1 &&
         grid->dzz[nc1][grid->etop[j]]==0 &&
-        grid->dzz[nc2][grid->etop[j]]==0 ) 
+        grid->dzz[nc2][grid->etop[j]]==0 )
       phys->u[j][grid->etop[j]]=0;
   }
 
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+  if(myproc==DBG_PROC) {
+    printf("\nUPredictor edge velocity profile just after implicit barotropic\n");
+
+    for(k=grid->etop[DBG_EDGE];k<grid->Nke[DBG_EDGE];k++) {
+      if(grid->etop[DBG_EDGE]==k) {
+        printf("[p=%d j=%d k=% 3d] etop=%d\n",
+               myproc, DBG_EDGE, k, grid->etop[DBG_EDGE]);
+      }
+      printf("[p=%d j=%d k=% 3d] u=%.9f\n",
+             myproc, DBG_EDGE, k, phys->u[DBG_EDGE][k]);
+    }
+  }
+#endif
+
+
   // Now update the vertical grid spacing with the new free surface.
   // can comment this out to linearize the free surface 
-  UpdateDZ(grid,phys,prop, 0);
+  UpdateDZ(grid,phys,prop, 0, myproc);
 
   // Use the new free surface to add the implicit part of the free-surface
   // pressure gradient to the horizontal momentum.
@@ -3102,6 +3630,9 @@ static void UPredictor(gridT *grid, physT *phys,
 
   // Now set the fluxes at the free-surface boundary by assuming dw/dz = 0
   // this is for type 3 boundary conditions
+  // RH: this might be problematic when (a) a boundary cell has multiple
+  //    edges on the boundary, or (b) an internal edge is between two
+  //    boundary cells.
   for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
     i = grid->cellp[iptr];
     for(nf=0;nf<grid->nfaces[i];nf++) {
@@ -3110,8 +3641,14 @@ static void UPredictor(gridT *grid, physT *phys,
         for(k=grid->etop[ne];k<grid->Nke[ne];k++) {
           phys->u[ne][k] = 0;
           sum=0;
+          // in at least one case where boundary cells with freesurface
+          // BC had multiple edges on the boundary and had internal edges
+          // between two FS BC cells, this led to instability.
+          // it might be stable if made aware of multiple BC edges per face.
+#ifdef VELOCITY_ON_TYPE3_EDGES
           for(nf1=0;nf1<grid->nfaces[i];nf1++)
             sum+=phys->u[grid->face[i*grid->maxfaces+nf1]][k]*grid->df[grid->face[i*grid->maxfaces+nf1]]*grid->normal[i*grid->maxfaces+nf1];
+#endif // VELOCITY_ON_TYPE3_EDGES
           phys->u[ne][k]=-sum/grid->df[ne]/grid->normal[i*grid->maxfaces+nf];
         }
       }
@@ -4189,7 +4726,9 @@ void ReadProperties(propT **prop, gridT *grid, int myproc)
   // -Update new cells (newcells=1)
   if((*prop)->wetdry) {
     (*prop)->conserveMomentum = 0;
-    (*prop)->thetaM = 1;//Fully implicit
+    // RH: old stable code had explicit vertical advection of horizontal momentum.
+    //    allow this to come in from the input file.
+    // (*prop)->thetaM = 1;//Fully implicit
     //(*prop)->thetaM = 0.5;
     (*prop)->newcells = 1;
   }
@@ -4930,12 +5469,12 @@ static void GetMomentumFaceValues(REAL **uface, REAL **ui, REAL **boundary_ui, R
   for(jptr=grid->edgedist[2];jptr<grid->edgedist[3];jptr++) {
     j = grid->edgep[jptr];
     i = grid->grad[2*j];
-
+    
     for(k=grid->etop[j];k<grid->Nke[j];k++) {
       if(U[j][k]>0)
-	uface[j][k]=boundary_ui[jptr-grid->edgedist[2]][k];
+        uface[j][k]=boundary_ui[jptr-grid->edgedist[2]][k];
       else
-	uface[j][k]=ui[i][k];
+        uface[j][k]=ui[i][k];
     }
   }
 
@@ -4977,35 +5516,39 @@ static void GetMomentumFaceValues(REAL **uface, REAL **ui, REAL **boundary_ui, R
     for(k=kmin;k<grid->Nke[j];k++) {
       // compute upwinding data
       if(U[j][k]>0)
-	nc=nc2;
+        nc=nc2;
       else
-	nc=nc1;
-
+        nc=nc1;
+      
       switch(prop->nonlinear) {
       case 1:
-	uface[j][k]=ui[nc][k];
-            break;
-          case 2:
-            uface[j][k]=UFaceFlux(j,k,ui,U,grid,prop->dt,nonlinear);
-            break;
-          case 4:
-            uface[j][k]=UFaceFlux(j,k,ui,U,grid,prop->dt,nonlinear);
-            break;
-          case 5:
-            if(U[j][k]>0)
-              tempu=phys->SfHp[j][k];
-            else
-              tempu=phys->SfHm[j][k];
-            uface[j][k]=tempu;
-            break;
-          default:
-            uface[j][k]=ui[nc][k];
-            break;
-        }
+        uface[j][k]=ui[nc][k];
+        break;
+      case 2:
+        uface[j][k]=UFaceFlux(j,k,ui,U,grid,prop->dt,nonlinear);
+        break;
+      case 4:
+        uface[j][k]=UFaceFlux(j,k,ui,U,grid,prop->dt,nonlinear);
+        break;
+      case 5:
+        if(U[j][k]>0)
+          tempu=phys->SfHp[j][k];
+        else
+          tempu=phys->SfHm[j][k];
+        uface[j][k]=tempu;
+        break;
+      default:
+        uface[j][k]=ui[nc][k];
+        break;
+      }
+      if(uface[j][k]!=uface[j][k]) {
+        printf("Spinning GetMomentumFaceValues on proc=%d, pid=%d\n",myproc,getpid());
+        while(1);
       }
     }
-
-    // Faces on type 3 cells are always updated with first-order upwind
+  }
+  
+  // Faces on type 3 cells are always updated with first-order upwind
 
     for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
       i = grid->cellp[iptr];
