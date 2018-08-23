@@ -1108,16 +1108,16 @@ static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, 
     dimidone[0] = dimid_Nc;
     if ((retval = nc_def_var(ncid,"dv",NC_DOUBLE,1,dimidone,&varid)))
       ERR(retval);
-    nc_addattr(ncid, varid,"stanford_name","sea_floor_depth_below_geoid");
+    nc_addattr(ncid, varid,"standard_name","sea_floor_depth_below_geoid");
     nc_addattr(ncid, varid,"long_name","seafloor depth");
     nc_addattr(ncid, varid,"units","m");
     nc_addattr(ncid, varid,"mesh","suntans_mesh");
     nc_addattr(ncid, varid,"location","face");
     nc_addattr(ncid, varid,"coordinates","xv yv");
+    nc_addattr(ncid, varid,"positive","down");
     //if ((retval = nc_put_var_double(ncid,varid, grid->dv)))
     //  ERR(retval);
 
-    
     //time
     dimidone[0] = dimid_time;
     if ((retval = nc_def_var(ncid,"time",NC_DOUBLE,1,dimidone,&varid)))
@@ -1145,6 +1145,7 @@ static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, 
    nc_addattr(ncid, varid,"units","m");
    nc_addattr(ncid, varid,"mesh","suntans_mesh");
    nc_addattr(ncid, varid,"location","face");
+   nc_addattr(ncid, varid,"positive","up");
    nc_addattr(ncid, varid,"coordinates","time yv xv");
     
    //u
@@ -1857,19 +1858,19 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
       ERR(retval);
    nc_addattr(ncid, varid,"standard_name","ocean_z_coordinate");
    nc_addattr(ncid, varid,"long_name","depth at layer mid points");
-   nc_addattr(ncid, varid,"units","m");  
-   nc_addattr(ncid, varid,"positive","up");  
+   nc_addattr(ncid, varid,"units","m");
+   nc_addattr(ncid, varid,"positive","down");
    //if ((retval = nc_put_var_double(ncid,varid, z_r)))
    //  ERR(retval);
 
    //z_w
-   dimidone[0] = dimid_Nkw;   
+   dimidone[0] = dimid_Nkw;
    if ((retval = nc_def_var(ncid,"z_w",NC_DOUBLE,1,dimidone,&varid)))
       ERR(retval);
    nc_addattr(ncid, varid,"standard_name","ocean_z_coordinate");
    nc_addattr(ncid, varid,"long_name","depth at layer edges");
-   nc_addattr(ncid, varid,"units","m");  
-   nc_addattr(ncid, varid,"positive","up");  
+   nc_addattr(ncid, varid,"units","m");
+   nc_addattr(ncid, varid,"positive","down");
    //if ((retval = nc_put_var_double(ncid,varid, z_w)))
    //  ERR(retval);
 
