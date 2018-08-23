@@ -1,2 +1,5 @@
 config.vars
 ext
+bin
+include
+lib
