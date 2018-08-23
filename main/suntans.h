@@ -32,14 +32,26 @@
 // and dry.
 // possible that this should be significantly larger than
 // the CG epsilon
-#define DRYCELLHEIGHT 2e-5
+#define DRYCELLHEIGHT 5e-4
+
+// merge top layer with next below when it is thinner 
+// than this
+#define DZMIN_SURFACE (2*DRYCELLHEIGHT)
+
 // Cell with depth less than this will be propped up to
 // to this deep.  should be less than DRYCELLHEIGHT
-#define CLAMPHEIGHT (0.5*DRYCELLHEIGHT)
+#define CLAMPHEIGHT (0.2*DRYCELLHEIGHT)
+
 // Edge (or is it cell?) with depth less than this get a very high drag
 // coefficient (100)
 #define BUFFERHEIGHT 1e-2
 #define DEFAULT_NFACES 3
+
+// enable low-level output for a particular model element
+// #define DBG_PROC 0
+// #define DBG_EDGE 13333
+// #define DBG_CELL 4130
+
 
 // Error/Exit codes
 #define EXIT_WRITING 1
