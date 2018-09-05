@@ -255,89 +255,94 @@ void OutputPhysicalVariables(gridT *grid, physT *phys, propT *prop,int myproc, i
   REAL *tmp = (REAL *)SunMalloc(grid->Ne*sizeof(REAL),"OutputData"), 
     *array2DPointer, **array3DPointer;
 
-  if(!(prop->n%prop->ntconserve) && !blowup) {
-    ComputeConservatives(grid,phys,prop,myproc,numprocs,comm);
-    if(myproc==0)
-      fprintf(prop->ConserveFID,"%e %e %e %e %e %e %e %e\n",prop->rtime,phys->mass,phys->volume,
-          phys->Ep-phys->Ep0,phys->Eflux1,phys->Eflux2,phys->Eflux3,phys->Eflux4);
-  }
+  // RH: in the past none of this was called when outputNetcdf was set.
+  // selectively only the store files are written now.
 
-  if(!(prop->n%prop->ntout) || prop->n==1+prop->nstart || blowup) {
+  if(prop->outputNetcdf==0){
+    if(!(prop->n%prop->ntconserve) && !blowup) {
+      ComputeConservatives(grid,phys,prop,myproc,numprocs,comm);
+      if(myproc==0)
+        fprintf(prop->ConserveFID,"%e %e %e %e %e %e %e %e\n",prop->rtime,phys->mass,phys->volume,
+                phys->Ep-phys->Ep0,phys->Eflux1,phys->Eflux2,phys->Eflux3,phys->Eflux4);
+    }
 
-    if(myproc==0 && VERBOSE>1) {
-      if(!blowup) {
-        printf("Outputting data at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
-      } else {
-        printf("Outputting blowup data at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
+    if(!(prop->n%prop->ntout) || prop->n==1+prop->nstart || blowup) {
+      if(myproc==0 && VERBOSE>1) {
+        if(!blowup) {
+          printf("Outputting data at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
+        } else {
+          printf("Outputting blowup data at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
+        }
       }
-    }
-    Write2DData(phys->h,prop->mergeArrays,prop->FreeSurfaceFID,"Error outputting free-surface data!\n",
-    		grid,numprocs,myproc,comm);
+      Write2DData(phys->h,prop->mergeArrays,prop->FreeSurfaceFID,"Error outputting free-surface data!\n",
+                  grid,numprocs,myproc,comm);
 
-    // compute quadratic interpolated estimates for velocity using pretty plot and don't redo work
-    if(prop->prettyplot==1 && prop->interp != QUAD) {
-      ISendRecvEdgeData3D(phys->u,grid,myproc,comm);
-      ComputeUC(phys->uc, phys->vc, phys,grid, myproc, QUAD);
-    }
+      // compute quadratic interpolated estimates for velocity using pretty plot and don't redo work
+      if(prop->prettyplot==1 && prop->interp != QUAD) {
+        ISendRecvEdgeData3D(phys->u,grid,myproc,comm);
+        ComputeUC(phys->uc, phys->vc, phys,grid, myproc, QUAD);
+      }
 
-    // Output u, v, w.  Interpolate w from faces to obtain it at the cell-centers first
-    for(i=0;i<grid->Nc;i++)
-      for(k=0;k<grid->Nk[i];k++)
-	phys->stmp2[i][k]=0.5*(phys->w[i][k]+phys->w[i][k+1]);
+      // Output u, v, w.  Interpolate w from faces to obtain it at the cell-centers first
+      for(i=0;i<grid->Nc;i++)
+        for(k=0;k<grid->Nk[i];k++)
+          phys->stmp2[i][k]=0.5*(phys->w[i][k]+phys->w[i][k+1]);
 
-    Write3DData(phys->uc,phys->htmp,prop->mergeArrays,prop->HorizontalVelocityFID,
-		"Error outputting uc-data!\n",grid,numprocs,myproc,comm);
-    Write3DData(phys->vc,phys->htmp,prop->mergeArrays,prop->HorizontalVelocityFID,
-		"Error outputting vc-data!\n",grid,numprocs,myproc,comm);
-    Write3DData(phys->stmp2,phys->htmp,prop->mergeArrays,prop->HorizontalVelocityFID,
-		"Error outputting wc-data!\n",grid,numprocs,myproc,comm);
+      Write3DData(phys->uc,phys->htmp,prop->mergeArrays,prop->HorizontalVelocityFID,
+                  "Error outputting uc-data!\n",grid,numprocs,myproc,comm);
+      Write3DData(phys->vc,phys->htmp,prop->mergeArrays,prop->HorizontalVelocityFID,
+                  "Error outputting vc-data!\n",grid,numprocs,myproc,comm);
+      Write3DData(phys->stmp2,phys->htmp,prop->mergeArrays,prop->HorizontalVelocityFID,
+                  "Error outputting wc-data!\n",grid,numprocs,myproc,comm);
 
-    // Output face-centered vertical velocity data
-    Write3DData(phys->w,phys->htmp,prop->mergeArrays,prop->VerticalVelocityFID,
-		"Error outputting vertical velocity data!\n",grid,numprocs,myproc,comm);
+      // Output face-centered vertical velocity data
+      Write3DData(phys->w,phys->htmp,prop->mergeArrays,prop->VerticalVelocityFID,
+                  "Error outputting vertical velocity data!\n",grid,numprocs,myproc,comm);
 
-    // Background salinity field
-    if(prop->n==1+prop->nstart)
-      Write3DData(phys->s0,phys->htmp,prop->mergeArrays,prop->BGSalinityFID,
-		  "Error outputting background salinity data!\n",grid,numprocs,myproc,comm);
+      // Background salinity field
+      if(prop->n==1+prop->nstart)
+        Write3DData(phys->s0,phys->htmp,prop->mergeArrays,prop->BGSalinityFID,
+                    "Error outputting background salinity data!\n",grid,numprocs,myproc,comm);
 
-    // Salinity field
-    Write3DData(phys->s,phys->htmp,prop->mergeArrays,prop->SalinityFID,
+      // Salinity field
+      Write3DData(phys->s,phys->htmp,prop->mergeArrays,prop->SalinityFID,
 		"Error outputting salinity data!\n",grid,numprocs,myproc,comm);
 
-    // Temperature field
-    Write3DData(phys->T,phys->htmp,prop->mergeArrays,prop->TemperatureFID,
-		"Error outputting temperature data!\n",grid,numprocs,myproc,comm);
+      // Temperature field
+      Write3DData(phys->T,phys->htmp,prop->mergeArrays,prop->TemperatureFID,
+                  "Error outputting temperature data!\n",grid,numprocs,myproc,comm);
 
-    // Nonhydrostatic pressure
-    Write3DData(phys->q,phys->htmp,prop->mergeArrays,prop->PressureFID,
-		"Error outputting nonhydrostatic pressure data!\n",grid,numprocs,myproc,comm);
+      // Nonhydrostatic pressure
+      Write3DData(phys->q,phys->htmp,prop->mergeArrays,prop->PressureFID,
+                  "Error outputting nonhydrostatic pressure data!\n",grid,numprocs,myproc,comm);
 
-    if(prop->turbmodel) {
-      // Eddy-viscosity
-      Write3DData(phys->nu_tv,phys->htmp,prop->mergeArrays,prop->EddyViscosityFID,
-		  "Error outputting eddy-viscosity data!\n",grid,numprocs,myproc,comm);
-      Write3DData(phys->kappa_tv,phys->htmp,prop->mergeArrays,prop->ScalarDiffusivityFID,
-		  "Error outputting scalar-diffusivity data!\n",grid,numprocs,myproc,comm);
+      if(prop->turbmodel) {
+        // Eddy-viscosity
+        Write3DData(phys->nu_tv,phys->htmp,prop->mergeArrays,prop->EddyViscosityFID,
+                    "Error outputting eddy-viscosity data!\n",grid,numprocs,myproc,comm);
+        Write3DData(phys->kappa_tv,phys->htmp,prop->mergeArrays,prop->ScalarDiffusivityFID,
+                    "Error outputting scalar-diffusivity data!\n",grid,numprocs,myproc,comm);
+      }
+      // No longer outputting vertical grid data
     }
-    
-    // No longer outputting vertical grid data
+
+    if(prop->n==1)
+      fclose(prop->BGSalinityFID);
+
+    if(prop->n==prop->nsteps+prop->nstart) {
+      fclose(prop->FreeSurfaceFID);
+      fclose(prop->HorizontalVelocityFID);
+      fclose(prop->VerticalVelocityFID);
+      fclose(prop->SalinityFID);
+      // No longer writing to vertical grid file
+      if(myproc==0) fclose(prop->ConserveFID);
+    }
   }
 
-  if(prop->n==1)
-    fclose(prop->BGSalinityFID);
-
-  if(prop->n==prop->nsteps+prop->nstart) {
-    fclose(prop->FreeSurfaceFID);
-    fclose(prop->HorizontalVelocityFID);
-    fclose(prop->VerticalVelocityFID);
-    fclose(prop->SalinityFID);
-    // No longer writing to vertical grid file
-    if(myproc==0) fclose(prop->ConserveFID);
-  }
+  // RH: this section now included regardless of outputNetcdf
 
   // probably should change to make a distinction between blowup and restarts
-  if(!(prop->n%prop->ntoutStore) || blowup) {
+  if( prop->ntoutStore!=0 && ( !(prop->n%prop->ntoutStore) || blowup) ) {
     if(VERBOSE>1 && myproc==0) 
       printf("Outputting restart data at step %d\n",prop->n);
 

@@ -1609,17 +1609,18 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
     t_check+=Timer()-t0;
 
     // Output data based on ntout specified in suntans.dat
+    // RH: always call OutputPhysicalVariables, so that we can have both
+    // netcdf output and restart files.
     t0=Timer();
-    if (prop->outputNetcdf==0){
-      // Write to binary
-      OutputPhysicalVariables(grid,phys,prop,myproc,numprocs,blowup,comm);
-    }else {
+    // Write to binary
+    OutputPhysicalVariables(grid,phys,prop,myproc,numprocs,blowup,comm);
+    if (prop->outputNetcdf!=0){
       // Output data to netcdf
-	if(prop->mergeArrays){
-	    WriteOutputNCmerge(prop, grid, phys, met, blowup,numprocs,myproc,comm);
-	}else{
-	    WriteOutputNC(prop, grid, phys, met, blowup, myproc);
-	}
+      if(prop->mergeArrays){
+        WriteOutputNCmerge(prop, grid, phys, met, blowup,numprocs,myproc,comm);
+      }else{
+        WriteOutputNC(prop, grid, phys, met, blowup, myproc);
+      }
     }
     // Output the average arrays
     if(prop->calcaverage){
