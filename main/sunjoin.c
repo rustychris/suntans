@@ -29,7 +29,7 @@ void read_cell_1D(int ncproc, int Nrows,  char *vname, ptrT *ptr, gridT *grid, R
 void read_cell_int_1D(int ncproc, int nrows, char *vname, ptrT *ptr, gridT *grid, int *tmp2d, int myproc);
 void read_cell_2Dall(int ncproc, int Nc, int Ndim, char *vname, ptrT *ptr, gridT *grid, REAL *tmp2d, int myproc);
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   int myproc, numprocs, j;
   MPI_Comm comm;
@@ -48,19 +48,20 @@ main(int argc, char *argv[])
   // Same steps as suntans
   ParseFlags(argc,argv,myproc);
   GetGrid(&grid,myproc,numprocs,comm);
-  ReadProperties(&prop,myproc);
+  ReadProperties(&prop,grid,myproc);
   InitializeVerticalGrid(&grid,myproc);
   AllocatePhysicalVariables(grid,&phys,prop);
   AllocateMet(prop,grid,&met,myproc);
   // Joining function
   JoinNetcdf(prop,grid,phys,met);
-  
+
   t1=time(NULL);
   printf("###############################################\n");
   printf(" Finished joining output files.\n");
   printf("\nTotal elapsed time: %.2f s\n",t1-t0);
   printf("###############################################\n");
   EndMpi(&comm);
+  return 0;
 } // End of main
 
 /*
