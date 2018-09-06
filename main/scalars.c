@@ -9,6 +9,7 @@
  * University. All Rights Reserved.
  *
  */
+#include <assert.h>
 #include "scalars.h"
 #include "util.h"
 #include "tvd.h"
@@ -45,8 +46,8 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
 
   prop->TVD = TVDscheme;
   // These are used mostly debugging to turn on/off vertical and horizontal TVD.
-  prop->horiTVD = 1;
-  prop->vertTVD = 1;
+  prop->horiTVD = 0;
+  prop->vertTVD = 0;
 
   ap = phys->ap;
   am = phys->am;
@@ -67,8 +68,15 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
     fab=1.5;
 
   for(i=0;i<Nc;i++) 
-    for(k=0;k<grid->Nk[i];k++) 
+    for(k=0;k<grid->Nk[i];k++)  {
       phys->stmp[i][k]=scal[i][k];
+#ifdef DBG_CELL
+      if(DBG_CELL==i && DBG_PROC==myproc) {
+        printf("[p=%d] top of UpdateScalars, scal[i=%d][k=%d]=%.3f\n",
+               myproc,i,k,phys->stmp[i][k]);
+      }
+#endif
+    }
 
   // Add on boundary fluxes, using stmp2 as the temporary storage
   // variable
@@ -115,14 +123,18 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
 
     // These are the advective components of the tridiagonal
     // at the new time step.
-    if(!(prop->TVD && prop->vertTVD))
+    // RH: for shallow water columns revert to non-TVD.  TVD
+    // doesn't make sense with fewer than 3 layers, and the code
+    // is not safe for those layers, anyway.
+    if( !(prop->TVD && prop->vertTVD) || (grid->Nk[i]-ktop<3) ) {
       for(k=0;k<grid->Nk[i]+1;k++) {
         ap[k] = 0.5*(wnew[i][k]+fabs(wnew[i][k]));
         am[k] = 0.5*(wnew[i][k]-fabs(wnew[i][k]));
       }
-    else  // Compute the ap/am for TVD schemes
+    } else {// Compute the ap/am for TVD schemes
       GetApAm(ap,am,phys->wp,phys->wm,phys->Cp,phys->Cm,phys->rp,phys->rm,
           wnew,grid->dzz,scal,i,grid->Nk[i],ktop,prop->dt,prop->TVD);
+    }
 
     for(k=ktop+1;k<grid->Nk[i];k++) {
       a[k-ktop]=theta*dt*am[k];
@@ -185,14 +197,16 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
 
     // These are the advective components of the tridiagonal
     // that use the new velocity
-    if(!(prop->TVD && prop->vertTVD))
+    // RH: TVD no good with <3 layers (code is not safe for < 3 layers)
+    if( !(prop->TVD && prop->vertTVD) || (grid->Nk[i]-ktop<3) ) {
       for(k=0;k<grid->Nk[i]+1;k++) {
         ap[k] = 0.5*(phys->wtmp2[i][k]+fabs(phys->wtmp2[i][k]));
         am[k] = 0.5*(phys->wtmp2[i][k]-fabs(phys->wtmp2[i][k]));
       }
-    else // Compute the ap/am for TVD schemes
+    } else { // Compute the ap/am for TVD schemes
       GetApAm(ap,am,phys->wp,phys->wm,phys->Cp,phys->Cm,phys->rp,phys->rm,
           phys->wtmp2,grid->dzzold,phys->stmp,i,grid->Nk[i],ktop,prop->dt,prop->TVD);
+    }
 
     // Explicit advection and diffusion
     for(k=ktop+1;k<grid->Nk[i]-1;k++) 
@@ -237,12 +251,21 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
     for(k=0;k<grid->ctop[i];k++)
       Cn[i][k]=0;
 
-    if(src2)
-      for(k=grid->ctop[i];k<grid->Nk[i];k++) 
+    if(src2) {
+      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
         Cn[i][k-ktop]=dt*src2[i][k]*grid->dzzold[i][k];
-    else
+#ifdef DBG_PROC
+        if(DBG_PROC==myproc) {
+          assert( src2[i][k]==src2[i][k] ); // this one is bad.
+          assert( grid->dzzold[i][k]==grid->dzzold[i][k] );
+          assert( Cn[i][k-ktop]==Cn[i][k-ktop] );
+        }
+#endif
+      }
+    } else {
       for(k=grid->ctop[i];k<grid->Nk[i];k++)
         Cn[i][k]=0;
+    }
 
     // Now create the source term for the current time step
     for(k=0;k<grid->Nk[i];k++)
@@ -290,8 +313,22 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
       Cn[i][0]-=ap[k];
 
     // Add on the source from the current time step to the rhs.
-    for(k=0;k<grid->Nk[i]-ktop;k++) 
+    for(k=0;k<grid->Nk[i]-ktop;k++)
       d[k]+=fab*Cn[i][k];
+
+#ifdef DBG_PROC
+    if(DBG_PROC==myproc) {
+      for(k=0;k<grid->Nk[i]-ktop;k++) {
+        assert( a[k]==a[k] );
+        assert( b[k]==b[k] );
+        assert( c[k]==c[k] );
+        assert( ap[k+ktop]==ap[k+ktop] );
+        assert( Cn[i][k]==Cn[i][k] );
+        assert( d[k]==d[k] );
+      }
+    }
+#endif
+
 
     // Add on the volume correction if h was < -d
     /*
@@ -308,6 +345,7 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
     for(k=grid->ctop[i];k<=ktop;k++)
       Cn[i][k]=ap[ktop]/(1+abs(grid->ctop[i]-ktop));
 
+
     if(grid->Nk[i]-ktop>1) 
       TriSolve(a,b,c,d,&(scal[i][ktop]),grid->Nk[i]-ktop);
     else if(prop->n>1) {
@@ -322,6 +360,15 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
 
     for(k=grid->ctop[i];k<grid->ctopold[i];k++) 
       scal[i][k]=scal[i][ktop];
+
+#ifdef DBG_CELL
+    if(DBG_CELL==i && DBG_PROC==myproc) {
+      for(k=0;k<grid->Nk[i];k++) 
+        printf("[p=%d] end of UpdateScalars, scal[i=%d][k=%d]=%.3f\n",
+               myproc,i,k,scal[i][k]);
+    }
+#endif
+
   }
 
   // Code to check divergence change CHECKCONSISTENCY to 1 in suntans.h
@@ -443,4 +490,4 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
       printf("Total number of CWC violations (all procs): s<s_min: %d, s>s_max: %d\n",
           allmincount,allmaxcount);
   }
-  }
+}

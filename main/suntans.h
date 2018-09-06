@@ -48,10 +48,9 @@
 #define DEFAULT_NFACES 3
 
 // enable low-level output for a particular model element
-// #define DBG_PROC 0
+// #define DBG_PROC 2
 // #define DBG_EDGE 13333
-// #define DBG_CELL 4130
-
+// #define DBG_CELL 2058
 
 // Error/Exit codes
 #define EXIT_WRITING 1

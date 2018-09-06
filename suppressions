@@ -1,0 +1,30 @@
+{
+   cond_jump
+   Memcheck:Cond
+   ...
+   fun:main
+}
+{
+   cond_jump
+   Memcheck:Cond
+   ...
+   fun:deflate
+}
+{
+   uninit_use8
+   Memcheck:Value8
+   ...
+   fun:printf
+}
+{
+   uninit_use8
+   Memcheck:Value8
+   ...
+   fun:deflate
+}
+{
+   write_buf_uninit
+   Memcheck:Param
+   write(buf)
+   fun:write
+}

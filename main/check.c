@@ -185,7 +185,7 @@ int Check(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_C
     if(!sflag) {
       printf("Problem with the scalar s (s=NaN):\n");
       printf("  Grid indices: i=%d k=%d (Nkc=%d)\n", is, ks, grid->Nkc[is]);
-      printf("  Location: x=%.3e, y=%.3e, z=%.3e\n",grid->xv[is],grid->yv[is],DepthFromDZ(grid,phys,is,ks));
+      printf("  Location: x=%.6e, y=%.6e, z=%.3e\n",grid->xv[is],grid->yv[is],DepthFromDZ(grid,phys,is,ks));
     }
 
     if(!hflag) {

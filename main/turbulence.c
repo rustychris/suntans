@@ -9,6 +9,8 @@
  * University. All Rights Reserved.
  *
  */
+#include <assert.h>
+#define ASSERT_FINITE(f) assert((f)==(f))
 #include "math.h"
 #include "phys.h"
 #include "grid.h"
@@ -54,26 +56,43 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
   
   // First solve for q^2 and store its old value in stmp3
   for(i=0;i<grid->Nc;i++) {
-
     // dudz, dvdz, and drdz store gradients at k-1/2
     for(k=grid->ctop[i]+1;k<grid->Nk[i];k++) {
       dudz[k]=2.0*(phys->uc[i][k-1]-phys->uc[i][k])/(grid->dzz[i][k-1]+grid->dzz[i][k]);
       dvdz[k]=2.0*(phys->vc[i][k-1]-phys->vc[i][k])/(grid->dzz[i][k-1]+grid->dzz[i][k]);
       drdz[k]=2.0*(phys->rho[i][k-1]-phys->rho[i][k])/(grid->dzz[i][k-1]+grid->dzz[i][k]);
     }
-    dudz[grid->ctop[i]]=dudz[grid->ctop[i]+1];
-    dvdz[grid->ctop[i]]=dvdz[grid->ctop[i]+1];
-    drdz[grid->ctop[i]]=drdz[grid->ctop[i]+1];
-    dudz[grid->Nk[i]]=dudz[grid->Nk[i]-1];
-    dvdz[grid->Nk[i]]=dvdz[grid->Nk[i]-1];
-    drdz[grid->Nk[i]]=drdz[grid->Nk[i]-1];
-    
+    // RH need to handle 1 layer cells
+    if( grid->Nk[i] - grid->ctop[i]>1 ){
+      dudz[grid->ctop[i]]=dudz[grid->ctop[i]+1];
+      dvdz[grid->ctop[i]]=dvdz[grid->ctop[i]+1];
+      drdz[grid->ctop[i]]=drdz[grid->ctop[i]+1];
+      dudz[grid->Nk[i]]=dudz[grid->Nk[i]-1];
+      dvdz[grid->Nk[i]]=dvdz[grid->Nk[i]-1];
+      drdz[grid->Nk[i]]=drdz[grid->Nk[i]-1];
+    } else {
+      // RH not sure about the correct fix -- should we be worried about
+      // dry cells?
+      for(k=grid->ctop[i];k<=grid->Nk[i];k++) {
+        dudz[k]=0;
+        dvdz[k]=0;
+        drdz[k]=0;
+      }
+    }
+
     // uold will store src1 for q^2, which is the 2q/B1 l term
     // wtmp will store src2 for q^2, which is the 2 (Ps+Pb) term
     for(k=grid->ctop[i];k<grid->Nk[i];k++) {
       phys->uold[i][k]=2.0*q[i][k]/B1/(l[i][k]+SMALL);
       phys->wtmp[i][k]=2.0*fabs((prop->nu+nuT[i][k])*(pow(0.5*(dudz[k]+dudz[k+1]),2)+pow(0.5*(dvdz[k]+dvdz[k+1]),2))+
       				prop->grav*(prop->kappa_s+kappaT[i][k])*0.5*(drdz[k]+drdz[k+1]));
+#ifdef DBG_PROC
+      // problem is that kappaT is 0, and drdz is inf.
+      ASSERT_FINITE( 0.0*drdz[k] );
+      ASSERT_FINITE( kappaT[i][k]*drdz[k] );
+      ASSERT_FINITE( kappaT[i][k]*(drdz[k]+drdz[k+1]) );
+      ASSERT_FINITE(phys->wtmp[i][k]);
+#endif 
     }
 
     // kappaT will store the diffusion coefficient for q^2
@@ -110,9 +129,15 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
     
     for(k=grid->ctop[ib];k<grid->Nk[ib];k++) 
       phys->boundary_tmp[jptr-grid->edgedist[2]][k]=q[ib][k];
-  }    
+  }
+#ifdef DBG_PROC
+  if(DBG_PROC==myproc) printf("UpdateScalars for turb q\n");
+#endif
   UpdateScalars(grid,phys,prop,wnew,q,phys->boundary_tmp,phys->Cn_q,0,0,kappaT,thetaQ,phys->uold,phys->wtmp,
 		phys->htmp,phys->hold,1,1,comm,myproc,0,prop->TVDturb);
+#ifdef DBG_PROC
+  if(DBG_PROC==myproc) printf("UpdateScalars for turb q return\n");
+#endif
 
   // q now contains q^2
   for(i=0;i<grid->Nc;i++) {
@@ -148,8 +173,15 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
     for(k=grid->ctop[ib];k<grid->Nk[ib];k++) 
       phys->boundary_tmp[jptr-grid->edgedist[2]][k]=l[ib][k];
   }
+
+#ifdef DBG_PROC
+  if(DBG_PROC==myproc) printf("UpdateScalars for turb l\n");
+#endif
   UpdateScalars(grid,phys,prop,wnew,l,phys->boundary_tmp,phys->Cn_l,0,0,kappaT,thetaQ,phys->uold,phys->wtmp,
 		phys->htmp,phys->hold,1,1,comm,myproc,0,prop->TVDturb);
+#ifdef DBG_PROC
+  if(DBG_PROC==myproc) printf("UpdateScalars for turb l return\n");
+#endif
 
   // Set l to a background value if it gets too small.
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {

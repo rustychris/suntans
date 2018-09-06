@@ -10,6 +10,7 @@
  *
  */
 #include <math.h>
+#include <assert.h>
 #include "suntans.h"
 #include "phys.h"
 #include "grid.h"
@@ -57,8 +58,10 @@ void HorizontalFaceScalars(gridT *grid, physT *phys, propT *prop, REAL **scal, R
 
 	u_nptheta = normal*(prop->theta*phys->u[ne][k]+(1-prop->theta)*phys->utmp2[ne][k]);
 	Qminus = 0.5*grid->dzf[ne][k]*grid->df[ne]*fabs(u_nptheta-fabs(u_nptheta));
-	if(neigh!=-1)
-	  sumQC[i][k]+=Qminus*(scal[i][k]-scal[neigh][k]);
+        // RH: include check against depth of neigh.
+	if( (neigh!=-1) && (k<grid->Nk[neigh]) ) {
+	  sumQC[i][k]+=Qminus*(scal[i][k]-scal[neigh][k]); 
+        }
 	sumQ[i][k]+=Qminus;
       }
     }
@@ -162,6 +165,8 @@ void GetApAm(REAL *ap, REAL *am, REAL *wp, REAL *wm, REAL *Cp, REAL *Cm, REAL *r
 	     REAL **w, REAL **dzz, REAL **scal, int i, int Nk, int ktop, REAL dt, int TVD) {
   int k;
 
+  assert(Nk-ktop >= 3);
+  
   // Implicit vertical advection terms
   for(k=0;k<Nk+1;k++) {
     wp[k] = 0.5*(w[i][k]+fabs(w[i][k]));

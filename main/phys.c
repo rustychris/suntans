@@ -1465,10 +1465,16 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
 	getTsurf(grid,phys); // Find the surface temperature
 	
         HeatSource(phys->wtmp,phys->uold,grid,phys,prop,met, myproc, comm);
+#ifdef DBG_PROC
+        if(DBG_PROC==myproc) printf("UpdateScalars for temperature\n");
+#endif
         UpdateScalars(grid,phys,prop,phys->wnew,phys->T,phys->boundary_T,phys->Cn_T,
             prop->kappa_T,prop->kappa_TH,phys->kappa_tv,prop->theta,
             phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,0,prop->TVDtemp);
-	
+
+#ifdef DBG_PROC
+        if(DBG_PROC==myproc) printf("UpdateScalars for temperature return\n");
+#endif
 	getchangeT(grid,phys); // Get the change in surface temp
         ISendRecvCellData3D(phys->T,grid,myproc,comm);
 	
@@ -1502,10 +1508,16 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
 	    UpdateScalars(grid,phys,prop,phys->wnew,phys->s,phys->boundary_s,phys->Cn_R,
 		prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,
 		phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,1,prop->TVDsalt);
-	}else{ 
-	     UpdateScalars(grid,phys,prop,phys->wnew,phys->s,phys->boundary_s,phys->Cn_R,
-		prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,
-		NULL,NULL,NULL,NULL,0,0,comm,myproc,1,prop->TVDsalt);
+	}else{
+#ifdef DBG_PROC
+          if(DBG_PROC==myproc) printf("UpdateScalars for salt\n");
+#endif
+          UpdateScalars(grid,phys,prop,phys->wnew,phys->s,phys->boundary_s,phys->Cn_R,
+                        prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,
+                        NULL,NULL,NULL,NULL,0,0,comm,myproc,1,prop->TVDsalt);
+#ifdef DBG_PROC
+          if(DBG_PROC==myproc) printf("UpdateScalars for salt returns\n");
+#endif
 	}
 	ISendRecvCellData3D(phys->s,grid,myproc,comm);
 
@@ -2272,7 +2284,10 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     for(nf=0;nf<grid->nfaces[nc1];nf++) {
       if((nc2=grid->neigh[nc1*grid->maxfaces+nf])!=-1) {
         ne=grid->face[nc1*grid->maxfaces+nf];
-        for(k=k0;k<grid->Nk[nc1];k++) {
+        // RH: k goes to the bed for nc1, but stmp is for nc2.
+        // so use Nke[ne] instead.
+        //for(k=k0;k<grid->Nk[nc1];k++) {
+        for(k=k0;k<grid->Nke[ne];k++) {
           phys->Cn_U[ne][k]-=
             grid->def[nc1*grid->maxfaces+nf]/grid->dg[ne]*
             prop->dt*(
