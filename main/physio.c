@@ -490,6 +490,12 @@ void ReadPhysicalVariables(gridT *grid, physT *phys, propT *prop, int myproc, MP
       printf("Error reading phys->s0[i]\n");
   fclose(prop->StartFID);
 
+  // RH: unsure of these..
+  // nstart should be set at the top of this fn
+  // so hopefully this works.
+  prop->toffSet = getToffSet(prop->basetime,prop->starttime);
+  prop->nctime = prop->toffSet*86400.0 + prop->nstart*prop->dt;
+
   UpdateDZ(grid,phys,prop, 0,myproc);
 
   // cell centered velocity computed so that this does not 
