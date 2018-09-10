@@ -110,12 +110,17 @@ void nc_read_3D(int ncid, char *vname, size_t start[3], size_t count[3], REAL **
     REAL outdata[(int)count[0]][(int)count[1]][(int)count[2]];
 
     //Read the data
-    if ((retval = nc_inq_varid(ncid, vname, &varid)))
-	ERR(retval);
-//    if ((retval = nc_get_vara_double(ncid, varid, start, count, &tmparray[0][0][0]))) 
-//	ERR(retval);    
-    if ((retval = nc_get_vara_double(ncid, varid, start, count, &outdata[0][0][0]))) 
-	ERR(retval); 
+    if ((retval = nc_inq_varid(ncid, vname, &varid))) {
+      ERRM(retval,"inq_varid in nc_read_3D");
+    }
+    //    if ((retval = nc_get_vara_double(ncid, varid, start, count, &tmparray[0][0][0])))
+    //	ERR(retval);
+    if ((retval = nc_get_vara_double(ncid, varid, start, count, &outdata[0][0][0])))  {
+      printf("start: %d %d %d\n",start[0],start[1],start[2]);
+      printf("count: %d %d %d\n",count[0],count[1],count[2]);
+      printf("varname: %s\n",vname);
+      ERRM(retval,"nc_get_vara_double");
+    }
 
     // Loop through and insert the vector values into an array
     for(n=0;n<(int)count[0];n++){
@@ -731,13 +736,7 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
      
     /* Update the time counter*/
     prop->nctimectr += 1;
-
-    // RH: try to make more data available during the run
-    printf("SYNCING netcdf\n");
-    if ( (retval=nc_sync(ncid)) )
-      ERRM(retval,"calling nc_sync");
    }
-   
    // Free the temporary vector
    //SunFree(tmpvar,grid->Nc*grid->Nkmax*sizeof(REAL),"WriteOuputNC");
    //SunFree(tmpvarE,grid->Ne*grid->Nkmax*sizeof(REAL),"WriteOuputNC");
@@ -4696,7 +4695,7 @@ size_t returndimlen(int ncid, char *dimname){
  * -----------------------------
  * Reads in boundary netcdf data into the forward and back time steps 
  *
- */     
+ */
 void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
     int retval, j, k, n, p, sendSize;
     int t0, t1;
