@@ -272,13 +272,15 @@ void nc_write_doublevar(int ncid, char *vname, gridT *grid, REAL *tmparray, int 
 * Function: getTimeRec()
 * -----------------------------
 *  Retuns the index of the first preceding time step in the vector time
+*  May return out-of-bounds values, -1 or nt.
 */
 int getTimeRec(REAL nctime, REAL *time, int nt){
    int j;
-   
+
    for(j=0;j<nt;j++){
-      if (time[j]>=nctime)
-	return j-1;
+     if (time[j]>=nctime) {
+       return j-1;
+     }
    }
    return nt;
 }
@@ -4534,50 +4536,51 @@ void ReadMetNC(propT *prop, gridT *grid, metinT *metin,int myproc){
 *
 */
 void ReadMetNCcoord(propT *prop, gridT *grid, metinT *metin, int myproc){
-  
     /* Read the data from the meteorological netcdf file into the metin structure */
     int retval, j;
     int varid;
     char *vname;
     int ncid = prop->metncid;
 
+    printf("Reading MET coordinates\n"); // RH
+
     /* Get the horizontal coordintates*/
     vname = "x_Uwind";
     if(VERBOSE>2 && myproc==0) printf("Reading variable: %s...\n",vname);
     if ((retval = nc_inq_varid(ncid, vname, &varid)))
-	ERR(retval);
+      ERRM(retval,vname);
     if ((retval = nc_get_var_double(ncid, varid,metin->x_Uwind))) 
-      ERR(retval); 
+      ERRM(retval,vname); 
     vname = "y_Uwind";
     if(VERBOSE>2 && myproc==0) printf("Reading variable: %s...\n",vname);
     if ((retval = nc_inq_varid(ncid, vname, &varid)))
-	ERR(retval);
+      ERRM(retval,vname);
     if ((retval = nc_get_var_double(ncid, varid,metin->y_Uwind))) 
-      ERR(retval); 
+      ERRM(retval,vname); 
     vname = "x_Vwind";
     if(VERBOSE>2 && myproc==0) printf("Reading variable: %s...\n",vname);
     if ((retval = nc_inq_varid(ncid, vname, &varid)))
-	ERR(retval);
-    if ((retval = nc_get_var_double(ncid, varid,metin->x_Vwind))) 
-      ERR(retval); 
+      ERRM(retval,vname);
+    if ((retval = nc_get_var_double(ncid, varid,metin->x_Vwind)))
+      ERRM(retval,vname);
     vname = "y_Vwind";
     if(VERBOSE>2 && myproc==0) printf("Reading variable: %s...\n",vname);
     if ((retval = nc_inq_varid(ncid, vname, &varid)))
-	ERR(retval);
+      ERRM(retval,vname);
     if ((retval = nc_get_var_double(ncid, varid,metin->y_Vwind))) 
-      ERR(retval); 
+      ERRM(retval,vname);
     vname = "x_Tair";
     if(VERBOSE>2 && myproc==0) printf("Reading variable: %s...\n",vname);
     if ((retval = nc_inq_varid(ncid, vname, &varid)))
-	ERR(retval);
+      ERRM(retval,vname);
     if ((retval = nc_get_var_double(ncid, varid,metin->x_Tair))) 
-      ERR(retval); 
+      ERRM(retval,vname);
     vname = "y_Tair";
     if(VERBOSE>2 && myproc==0) printf("Reading variable: %s...\n",vname);
     if ((retval = nc_inq_varid(ncid, vname, &varid)))
-	ERR(retval);
-    if ((retval = nc_get_var_double(ncid, varid,metin->y_Tair))) 
-      ERR(retval); 
+      ERRM(retval,vname);
+    if ((retval = nc_get_var_double(ncid, varid,metin->y_Tair)))
+      ERRM(retval,vname);
     vname = "x_Pair";
     if(VERBOSE>2 && myproc==0) printf("Reading variable: %s...\n",vname);
     if ((retval = nc_inq_varid(ncid, vname, &varid)))
@@ -4657,12 +4660,11 @@ void ReadMetNCcoord(propT *prop, gridT *grid, metinT *metin, int myproc){
     vname = "Time";
     if(VERBOSE>2 && myproc==0) printf("Reading variable: %s...\n",vname);
     if ((retval = nc_inq_varid(ncid, vname, &varid)))
-        ERR(retval);
+      ERRM(retval,vname);
     if ((retval = nc_get_var_double(ncid, varid,metin->time))) 
-      ERR(retval); 
+      ERRM(retval,vname); 
     
     if(VERBOSE>2 && myproc==0) printf("Finished Reading met netcdf coordinates.\n");
-
 }// End function
 
 /*
@@ -4675,12 +4677,12 @@ size_t returndimlen(int ncid, char *dimname){
  int retval;
  int dimid;
  size_t dimlen;
- 
+
  if ((retval =nc_inq_dimid(ncid,dimname,&dimid)))
-    ERR(retval);
- 
+   ERRM(retval,dimname);
+
  if ((retval = nc_inq_dimlen(ncid,dimid, &dimlen)))
-    ERR(retval);
+   ERRM(retval,dimname);
  return dimlen;
 } //End function
 

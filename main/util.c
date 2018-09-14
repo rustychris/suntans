@@ -9,7 +9,8 @@
  * University. All Rights Reserved.
  *
  */
-#include<math.h>
+#include <math.h>
+#include <assert.h>
 #define _XOPEN_SOURCE /* for strptime */
 #define __USE_XOPEN
 #include <stdio.h> /* sorting */
@@ -410,16 +411,28 @@ int max(int a, int b) {
 * Function: QuadInterp()
 * ---------------------
 * 1-D quadratic interpolation function between 3 points (x0,x1,x2) with values (y0,y1,y2);
-*/ 
+*/
 
 REAL QuadInterp(REAL x, REAL x0, REAL x1, REAL x2, REAL y0, REAL y1, REAL y2){
     REAL L0, L1, L2;
 
 //    printf("x: %f, x0: %f, x1: %f, x2: %f, y0: %f, y1: %f, y2: %f\n",x,x0,x1,x2,y0,y1,y2);
+    if ( x0==x2 ) { // all the same sample
+      L0=1;
+      L1=L2=0;
+    } else if ( (x0==x1) || (x1==x2) ) {
+      L0=(x-x2) / (x0-x2);
+      L1=0;
+      L2=1-L0;
+    } else {
+      L0 = (x-x1) * (x-x2) / ( (x0-x1)*(x0-x2) );
+      L1 = (x-x0) * (x-x2) / ( (x1-x0)*(x1-x2) );
+      L2 = (x-x0) * (x-x1) / ( (x2-x0)*(x2-x1) );
+    }
 
-    L0 = (x-x1) * (x-x2) / ( (x0-x1)*(x0-x2) );
-    L1 = (x-x0) * (x-x2) / ( (x1-x0)*(x1-x2) );
-    L2 = (x-x0) * (x-x1) / ( (x2-x0)*(x2-x1) );
+    // avoid extrapolation, though.
+    assert(x>=x0);
+    assert(x<=x2);
 
     return y0*L0 + y1*L1 + y2*L2;
 

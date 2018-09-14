@@ -98,17 +98,38 @@ void updateMetData(propT *prop, gridT *grid, metinT *metin, metT *met, int mypro
   REAL dt, r1, r2;
    
   t1 = getTimeRec(prop->nctime,metin->time,metin->nt);
-    
+
+  if ( t1<0 ) {
+    if(myproc==0) printf("NetCDF met data starts too late\n");
+    t1=0;
+  }
+  if ( t1>=metin->nt ) {
+    if(myproc==0) printf("NetCDF met data ends too early\n");
+    t1=metin->nt-1;
+  }
+
     /* Only interpolate the data onto the grid if need to*/
     if (metin->t1!=t1){
       if(VERBOSE>3 && myproc==0) printf("Updating netcdf variable at nc timestep: %d\n",t1);
-      /* Read in the data two time steps*/
-      ReadMetNC(prop, grid, metin, myproc);
 
       metin->t1=t1;
-      metin->t0=t1-1;
-      metin->t2=t1+1;
-      
+      // rather than fail with nan when the data is not long enough, this will
+      // keep t0,t1,t2 valid, though it must be tested for in QuadInterp.
+      if(t1>0) {
+        metin->t0=t1-1;
+      } else {
+        metin->t0=t1;
+      }
+      if(t1+1<metin->nt) {
+        metin->t2=t1+1;
+      } else {
+        metin->t2=t1;
+      }
+
+      /* Read in the data two time steps*/
+      /* RH: This had been before the update above */
+      ReadMetNC(prop, grid, metin, myproc);
+
       /* Interpolate the two time steps onto the grid*/
       weightInterpArray(metin->Uwind, metin->WUwind, grid,
 	  metin->max_nearest_Uwind, metin->nearest_Uwind, NTmet, met->Uwind_t);
@@ -294,11 +315,10 @@ void AllocateMetIn(propT *prop, gridT *grid, metinT **metin, int myproc){
   size_t Ncloud;
   size_t nt;
   int Nc = grid->Nc;
-  
+
   if(VERBOSE>3 && myproc==0) printf("Allocating metin structure...\n");
   *metin = (metinT *)SunMalloc(sizeof(metinT),"AllocateMetIn");
-  
-  
+
   /* Scalars */
   (*metin)->NUwind = returndimlen(prop->metncid,"NUwind");
   (*metin)->NVwind = returndimlen(prop->metncid,"NVwind");
@@ -312,8 +332,7 @@ void AllocateMetIn(propT *prop, gridT *grid, metinT **metin, int myproc){
   (*metin)->t0 = -1;
   (*metin)->t1 = -1;
   (*metin)->t2 = -1;
- 
-  
+
   NUwind = (*metin)->NUwind;
   NVwind = (*metin)->NVwind;
   NTair = (*metin)->NTair;
@@ -322,7 +341,7 @@ void AllocateMetIn(propT *prop, gridT *grid, metinT **metin, int myproc){
   NRH = (*metin)->NRH;
   Ncloud = (*metin)->Ncloud;
   nt = (*metin)->nt;
-  
+
   if (VERBOSE>3){
       printf("NUwind = %d\n",(int)NUwind);
       printf("NVwind = %d\n",(int)NVwind); 
