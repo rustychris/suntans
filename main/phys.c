@@ -10,7 +10,6 @@
  *
  */
 #include <math.h>
-#include <assert.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -36,8 +35,8 @@
 #include "physio.h"
 #include "merge.h"
 #include "sediments.h"
+#include "substepping.h"
 
-#define ASSERT_FINITE(f) assert((f)==(f))
 
 /*
  * Private Function declarations.
@@ -776,34 +775,36 @@ void InitializeVerticalGrid(gridT **grid,int myproc)
 {
   int i, j, k, Nc=(*grid)->Nc, Ne=(*grid)->Ne;
 
-  // initialize in plan for the face (dzf dzfB) and 
+  // initialize in plan for the face (dzf dzfold dzfB) and
   // cell centered (dzz dzzold) quantities
   (*grid)->stairstep = MPI_GetValue(DATAFILE,"stairstep","InitializeVerticalGrid",myproc);
   (*grid)->fixdzz = MPI_GetValue(DATAFILE,"fixdzz","InitializeVerticalGrid",myproc);
   (*grid)->dzsmall = (REAL)MPI_GetValue(DATAFILE,"dzsmall","InitializeVerticalGrid",myproc);
-  (*grid)->smoothbot = (REAL)MPI_GetValue(DATAFILE,"smoothbot","InitializeVerticalGrid",myproc);  
+  (*grid)->smoothbot = (REAL)MPI_GetValue(DATAFILE,"smoothbot","InitializeVerticalGrid",myproc);
 
- 
-
+  // These free'd in grid.c FreeGrid.  Maybe better to refactor and make
+  // symmetric
   (*grid)->dzf = (REAL **)SunMalloc(Ne*sizeof(REAL *),"InitializeVerticalGrid");
+  (*grid)->dzfold = (REAL **)SunMalloc(Ne*sizeof(REAL *),"InitializeVerticalGrid");
   (*grid)->dzfB = (REAL *)SunMalloc(Ne*sizeof(REAL),"InitializeVerticalGrid");
   (*grid)->dzz = (REAL **)SunMalloc(Nc*sizeof(REAL *),"InitializeVerticalGrid");
   (*grid)->dzzold = (REAL **)SunMalloc(Nc*sizeof(REAL *),"InitializeVerticalGrid");
   (*grid)->dzbot = (REAL *)SunMalloc(Nc*sizeof(REAL),"InitializeVerticalGrid");
 
-
   // initialize over depth for edge-oriented quantities
-  for(j=0;j<Ne;j++) 
+  for(j=0;j<Ne;j++) {
     (*grid)->dzf[j]=(REAL *)SunMalloc(((*grid)->Nkc[j])*sizeof(REAL),"InitializeVerticalGrid");
+    (*grid)->dzfold[j]=(REAL *)SunMalloc(((*grid)->Nkc[j])*sizeof(REAL),"InitializeVerticalGrid");
+  }
 
   // initialize over depth for cell-centered quantities
   for(i=0;i<Nc;i++) {
     (*grid)->dzz[i]=(REAL *)SunMalloc(((*grid)->Nk[i])*sizeof(REAL),"InitializeVerticalGrid");
     (*grid)->dzzold[i]=(REAL *)SunMalloc(((*grid)->Nk[i])*sizeof(REAL),"InitializeVerticalGrid");
-    
+
     for(k=0;k<(*grid)->Nk[i];k++) {
-      (*grid)->dzz[i][k]=(*grid)->dz[k];  
-      (*grid)->dzzold[i][k]=(*grid)->dz[k];  
+      (*grid)->dzz[i][k]=(*grid)->dz[k];
+      (*grid)->dzzold[i][k]=(*grid)->dz[k];
     }
   }
 }
@@ -822,6 +823,10 @@ void InitializeVerticalGrid(gridT **grid,int myproc)
  * Otherwise it sets dzzold to dzz at the beginning of the function and updates dzz
  *   thereafter.
  *
+ */
+/*
+ * RH: replaced this with UpdateDZ from old wetting/drying branch which had
+ * been more extensively tested in SF Bay 
  */
 #if 0  // RH_UpdateDZ
 void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
@@ -1027,8 +1032,9 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
   if(!option) {
     for(j=0;j<Ne;j++) {
       grid->etopold[j]=grid->etop[j];
-      //for(k=0;k<grid->Nke[j];k++) 
-      //  grid->dzfold[j][k] = grid->dzf[j][k];
+      for(k=0;k<grid->Nkc[j];k++) {
+        grid->dzfold[j][k] = grid->dzf[j][k];
+      }
     }
     for(i=0;i<Nc;i++) {
       grid->ctopold[i]=grid->ctop[i];
@@ -1073,20 +1079,21 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
               // the lumped way - allows for the cell to extend into what is usually a deeper layer:
               // dzz = elevation of top of this layer - bed_elevation
               grid->dzz[i][k] = (z+grid->dz[k]) - (-grid->dv[i]);
-            } else 
+            } else {
               if(z<-grid->dv[i])
                 grid->dzz[i][k]=0;
-              else 
+              else
                 grid->dzz[i][k]=grid->dz[k];
-          } 
+            }
+          }
         } else {
           // We haven't seen the freesurface yet, or it was too close to the bottom of our cell
           // to count.
           grid->dzz[i][k]=0; // layer is above the freesurface
         }
       }
-      
-      if (!flag){  
+
+      if (!flag){
         // flag is still 0 if h is within CLAMPHEIGHT of the bed (and possibly below the
         // bed.
         k=grid->Nk[i] - 1; // bed cell
@@ -1104,7 +1111,7 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
           // If we update dzz here, we'll get freshening on this step.  Makes sense - either way we just added
           // some cell volume without any fluxes of scalar into the cell.
           phys->h[i] += dz_added; // dzmin-grid->dv[i];
-        
+
           // Dealer's choice: adding it to both doesn't conserve mass, but should preserve max/min
           // adding it to only dzz means we get some artificial freshening on this step.
           // adding to neither means that either dzz is negative and things are going to crash, or
@@ -1119,7 +1126,7 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
         // nonzero, and CGSolve may switch the sign of the flow
         // test for dryness should consult ctop directly.
         // grid->dzz[i][k]=0;
-      
+
         // Dry out the cell:
         grid->ctop[i]=grid->Nk[i];             // set top layer index to be Nk
       }
@@ -1128,7 +1135,7 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
     // Single layer
     for(i=0;i<Nc;i++) {
       grid->dzz[i][0] = grid->dv[i]+phys->h[i];
-      grid->ctop[i] = 0;      
+      grid->ctop[i] = 0;
       if(grid->dzz[i][0]< DRYCELLHEIGHT) { // dry
         if(grid->dzz[i][0]<CLAMPHEIGHT) {  // dry and the wet layer is too thin, set it to be dzmin
           phys->h[i]=CLAMPHEIGHT-grid->dv[i];
@@ -1140,14 +1147,16 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
       }
     }
   }
-  
-  // elm version - warnings
-  for(i=0;i<Nc;i++)
-    if(grid->dv[i]+phys->h[i]<0)
-      printf("WARNING: negative depth %f, at cell i %d, layers Nk[i] %d, flag %d\n",grid->dv[i]+phys->h[i],i,grid->Nk[i],flag);
 
+  // Wanings
+  for(i=0;i<Nc;i++) {
+    if(grid->dv[i]+phys->h[i]<0) {
+      printf("WARNING: negative depth %f, at cell i %d, layers Nk[i] %d, flag %d\n",
+             grid->dv[i]+phys->h[i],i,grid->Nk[i],flag);
+    }
+  }
 
-  // Now set grid->etop and ctop which store the index of the top cell  
+  // Now set grid->etop and ctop which store the index of the top cell
   // Also update flux face heights, dzf[j][k], and de = sum(dzf)
   for(j=0;j<grid->Ne;j++) {
     ne1 = grid->grad[2*j];
@@ -1205,12 +1214,18 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
   if(option) {
     for(j=0;j<Ne;j++)  {
       grid->etopold[j]=grid->etop[j];
+      for(k=0;k<grid->Nkc[j];k++) {
+        grid->dzfold[j][k] = grid->dzf[j][k];
+      }
     }
     for(i=0;i<Nc;i++) {
       grid->ctopold[i]=grid->ctop[i];
       for(k=0;k<grid->Nk[i];k++)
         grid->dzzold[i][k]=grid->dzz[i][k];
     }
+
+    // trunk suntans populates dzfB here, but it is not used
+    // anywhere, so not worrying about it.
   }
 
 #if defined(DBG_PROC) && defined(DBG_CELL)
@@ -1440,6 +1455,10 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       Continuity(phys->wnew,grid,phys,prop);
       ISendRecvWData(phys->wnew,grid,myproc,comm);
 
+      // Before EddyViscosity (which invokes UpdateScalars), figure out the global
+      // scalar advection timestep limitation.
+      CalculateSubsteps(grid,phys,prop,myproc,numprocs,comm);
+
       // Compute the eddy viscosity
       t0=Timer();
       EddyViscosity(grid,phys,prop,phys->wnew,comm,myproc);
@@ -1457,11 +1476,11 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       if(prop->calcage>0){
         UpdateAge(grid,phys,prop,comm,myproc);
       }
-     
+
       // Update the temperature only if gamma is nonzero in suntans.dat
-      if(prop->gamma) {
+       if(prop->gamma) {
         t0=Timer();
-	
+
 	getTsurf(grid,phys); // Find the surface temperature
 	
         HeatSource(phys->wtmp,phys->uold,grid,phys,prop,met, myproc, comm);

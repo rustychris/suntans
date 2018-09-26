@@ -190,16 +190,18 @@ typedef struct _propT {
     sponge_decay, thetaramptime, readSalinity, readTemperature, turbmodel, 
     TVD, horiTVD, vertTVD, TVDsalt, TVDtemp, TVDturb, laxWendroff, stairstep, AB, TVDmomentum, conserveMomentum,
     mergeArrays, computeSediments;
+  // number of substeps for upwind advection to have finite-volume CFL<=1.
+  int nsubsteps;
   FILE *FreeSurfaceFID, *HorizontalVelocityFID, *VerticalVelocityFID, *SalinityFID, *BGSalinityFID, 
        *InitSalinityFID, *InitTemperatureFID, *TemperatureFID, *PressureFID, *VerticalGridFID, *ConserveFID,    
-       *StoreFID, *StartFID, *EddyViscosityFID, *ScalarDiffusivityFID; 
+    *StoreFID, *StartFID, *EddyViscosityFID, *ScalarDiffusivityFID, *SubstepFID;
   interpolation interp; int prettyplot;
   int metmodel,  varmodel, outputNetcdf,  metncid, netcdfBdy, netcdfBdyFileID, readinitialnc, initialNCfileID, calcage, agemethod, calcaverage;
   int outputNetcdfFileID, averageNetcdfFileID;
   REAL nctime, toffSet, gmtoffset;
   int nctimectr, avgtimectr, avgctr, avgfilectr, ntaverage, nstepsperncfile, ncfilectr;
   REAL nugget, sill, range, Lsw, Cda, Ce, Ch;
-  char  starttime[15], basetime[15]; 
+  char  starttime[15], basetime[15];
 } propT;
 
 

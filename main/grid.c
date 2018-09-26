@@ -9,6 +9,7 @@
  * University. All Rights Reserved.
  *
  */
+#include <assert.h>
 #include "grid.h"
 #include "partition.h"
 #include "util.h"
@@ -998,6 +999,8 @@ static void CreateNormalArray(int *grad, int *face, int *normal, int *nfaces, in
     for(nf=0;nf<nfaces[n];nf++) {
       // for each face arbitrarily set normal to -1 if the first grad 
       // is the same cell as the current cell, otherwise 1
+      assert(face[maxfaces*n+nf]>=0); // not sure why this is happening.
+
       if(n==grad[2*face[maxfaces*n+nf]])
         normal[n*maxfaces+nf]=-1;
       else
@@ -1342,6 +1345,7 @@ void InitLocalGrid(gridT **grid)
 static void FreeGrid(gridT *grid, int numprocs)
 {
   int proc;
+  int i,j;
 
   SunFree(grid->xp,grid->Np*sizeof(REAL),"FreeGrid");
   SunFree(grid->yp,grid->Np*sizeof(REAL),"FreeGrid");
@@ -1349,6 +1353,24 @@ static void FreeGrid(gridT *grid, int numprocs)
   SunFree(grid->yv,grid->Nc*sizeof(REAL),"FreeGrid");
   SunFree(grid->dv,grid->Nc*sizeof(REAL),"FreeGrid");
   SunFree(grid->vwgt,grid->Nc*sizeof(REAL),"FreeGrid");
+
+  // These are allocated in phys.c:InitializeVerticalGrid
+  for(j=0;j<grid->Ne;j++) {
+    SunFree(grid->dzf[j],grid->Nkc[j]*sizeof(REAL),"FreeGrid");
+    SunFree(grid->dzfold[j],grid->Nkc[j]*sizeof(REAL),"FreeGrid");
+  }
+  for(i=0;i<grid->Nc;i++) {
+    SunFree(grid->dzz[i],grid->Nk[i]*sizeof(REAL),"FreeGrid");
+    SunFree(grid->dzzold[i],grid->Nk[i]*sizeof(REAL),"FreeGrid");
+  }
+
+  SunFree(grid->dzf,grid->Ne*sizeof(REAL *),"FreeGrid");
+  SunFree(grid->dzfold,grid->Ne*sizeof(REAL *),"FreeGrid");
+  SunFree(grid->dzfB,grid->Ne*sizeof(REAL),"FreeGrid");
+  SunFree(grid->dzz,grid->Nc*sizeof(REAL *),"FreeGrid");
+  SunFree(grid->dzzold,grid->Nc*sizeof(REAL *),"FreeGrid");
+  SunFree(grid->dzbot,grid->Nc*sizeof(REAL),"FreeGrid");
+
 
   SunFree(grid->edges,NUMEDGECOLUMNS*grid->Ne*sizeof(int),"FreeGrid");
   SunFree(grid->cells,grid->maxfaces*grid->Nc*sizeof(int),"FreeGrid");
@@ -1365,6 +1387,7 @@ static void FreeGrid(gridT *grid, int numprocs)
   SunFree(grid->grad,2*grid->Ne*sizeof(int),"FreeGrid");
   SunFree(grid->mark,grid->Ne*sizeof(int),"FreeGrid");
   SunFree(grid->edge_id,grid->Ne*sizeof(int),"FreeGrid");
+
 
   SunFree(grid->normal,grid->maxfaces*grid->Nc*sizeof(int),"FreeGrid");
   SunFree(grid->xadj,(grid->Nc+1)*sizeof(int),"FreeGrid");
@@ -1562,21 +1585,23 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
     }
   }
 
-  /* compute Nkp for the number of layers for each node*/
+  /* compute Nkp for the number of layers for each node */
   // for each node
   for(i = 0; i < (*localgrid)->Np; i++) {
     // look over its cell neighbors and take the max of Nkc
     // for each of the cell neighbors
-    
-    maxNk = (*localgrid)->Nk[(*localgrid)->pcneighs[i][0]];
-    for(npc = 1; npc < (*localgrid)->numpcneighs[i]; npc++) {
-      // find the max
-      maxNk = max(maxNk, (*localgrid)->Nk[(*localgrid)->pcneighs[i][npc]]);
-    }
-    // set value to max found (-1 if this is a bogus [TRIANGLE] point)
-    (*localgrid)->Nkp[i] = maxNk;
-    if((*localgrid)->numpcneighs[i]==0)
+
+    if((*localgrid)->numpcneighs[i]==0) {
       (*localgrid)->Nkp[i]=0;
+    } else {
+      maxNk=-1;
+      for(npc=0; npc < (*localgrid)->numpcneighs[i]; npc++) {
+        // find the max
+        maxNk = max(maxNk, (*localgrid)->Nk[(*localgrid)->pcneighs[i][npc]]);
+      }
+      // set value to max found (-1 if this is a bogus [TRIANGLE] point)
+      (*localgrid)->Nkp[i] = maxNk;
+    }
   }
 }
 
@@ -3553,8 +3578,15 @@ static void Geometry(gridT *maingrid, gridT **grid, int myproc)
             ((*grid)->yv[n]-maingrid->yp[(*grid)->edges[ne*NUMEDGECOLUMNS]])*(*grid)->n2[ne])*
         (*grid)->normal[n*(*grid)->maxfaces+nf];
         //Check for nan
-        if((*grid)->def[n*(*grid)->maxfaces+nf] != (*grid)->def[n*(*grid)->maxfaces+nf])
-             printf("Warning: nan computed for edge distance (def)\n");
+      if((*grid)->def[n*(*grid)->maxfaces+nf] != (*grid)->def[n*(*grid)->maxfaces+nf]) {
+        printf("Warning: nan computed for edge distance (def) cell=%d nf=%d ne=%d\n",
+               n,nf,ne);
+        printf("  vor: %.3f %.3f  n1: %.2f n2: %.2f  normal: %d\n",
+               (*grid)->xv[n],(*grid)->yv[n],
+               (*grid)->n1[ne],
+               (*grid)->n2[ne],
+               (*grid)->normal[n*(*grid)->maxfaces+nf] );
+      }
 
       // Distance to the edge midpoint. Not used.
       /*

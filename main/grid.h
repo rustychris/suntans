@@ -42,6 +42,7 @@ typedef struct _gridT {
   REAL **dzf;
   REAL *dzfB;
   REAL **dzzold;
+  REAL **dzfold;
   REAL *dztop;
   REAL *dzbot; 
   REAL dzsmall;

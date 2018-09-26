@@ -145,7 +145,7 @@ void OpenFiles(propT *prop, int myproc)
     sprintf(str,"%s.%d",filename,myproc);
     prop->averageNetcdfFileID = MPI_NCOpen(str,NC_NETCDF4,"OpenFiles",myproc);
   }
-  
+
   if(prop->outputNetcdf==0) {
     MPI_GetFile(filename,DATAFILE,"FreeSurfaceFile","OpenFiles",myproc);
     if(prop->mergeArrays)
@@ -153,14 +153,14 @@ void OpenFiles(propT *prop, int myproc)
     else
       sprintf(str,"%s.%d",filename,myproc);
     prop->FreeSurfaceFID = MPI_FOpen(str,"w","OpenFiles",myproc);
-    
+
     MPI_GetFile(filename,DATAFILE,"HorizontalVelocityFile","OpenFiles",myproc);
     if(prop->mergeArrays)
       strcpy(str,filename);
     else
       sprintf(str,"%s.%d",filename,myproc);
     prop->HorizontalVelocityFID = MPI_FOpen(str,"w","OpenFiles",myproc);
-    
+
     MPI_GetFile(filename,DATAFILE,"VerticalVelocityFile","OpenFiles",myproc);
     if(prop->mergeArrays)
       strcpy(str,filename);
@@ -233,6 +233,12 @@ void OpenFiles(propT *prop, int myproc)
     MPI_GetFile(filename,DATAFILE,"ConserveFile","OpenFiles",myproc);
     sprintf(str,"%s",filename);
     prop->ConserveFID = MPI_FOpen(str,"w","OpenFiles",myproc);
+
+    sprintf(str,"%s/%s",DATADIR,"substeps.csv");
+    prop->SubstepFID = MPI_FOpen(str,"w","OpenFiles",myproc);
+  } else {
+    prop->ConserveFID=NULL; // just to be sure
+    prop->SubstepFID=NULL;
   }
 }
 
@@ -335,7 +341,10 @@ void OutputPhysicalVariables(gridT *grid, physT *phys, propT *prop,int myproc, i
       fclose(prop->VerticalVelocityFID);
       fclose(prop->SalinityFID);
       // No longer writing to vertical grid file
-      if(myproc==0) fclose(prop->ConserveFID);
+      if(myproc==0) {
+        fclose(prop->ConserveFID);
+        fclose(prop->SubstepFID);
+      }
     }
   }
 

@@ -12,10 +12,14 @@
 #ifndef _util_h
 #define _util_h
 
+#include <assert.h>
+
 #include "grid.h"
 #include "suntans.h"
 
-enum Type 
+#define ASSERT_FINITE(f) assert((f)==(f))
+
+enum Type
 {
   DOUBLE,
   INT

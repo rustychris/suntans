@@ -95,7 +95,7 @@ void MPI_GetFile(char *string, char *file, char *str, char *call, int myproc)
 {
   char tmp[BUFFERLENGTH];
   MPI_GetString(tmp,file,str,call,myproc);
-  if(tmp[0]=='/') 
+  if(tmp[0]=='/')
     strcpy(string,tmp);
   else
     sprintf(string,"%s/%s",DATADIR,tmp);

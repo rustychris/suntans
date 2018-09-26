@@ -24,12 +24,12 @@ else
   MPIFILE = no-mpi.c
   MPIDEF = -DNOMPI
 endif
-OPTFLAGS = -O2
+#OPTFLAGS = -O2
 #OPTFLAGS = -O2 -mavx -xHost -ipo -static
 #OPTFLAGS=-Ofast
 #OPTFLAGS=-O3 -march=native
 #OPTFLAGS=-O3 -mavx
-#OPTFLAGS = -O0 -g
+OPTFLAGS = -O0 -g
 
 XLDFLAGS=-lX11 -lm
 XINC=/usr/include
@@ -103,6 +103,7 @@ DEPFLAGS = -Y
 SRCS = 	mympi.c grid.c gridio.c report.c util.c fileio.c phys.c physio.c suntans.c initialization.c memory.c \
 	turbulence.c boundaries.c check.c scalars.c tvd.c timer.c profiles.c state.c tides.c \
 	sources.c diffusion.c met.c averages.c age.c merge.c sendrecv.c sediments.c \
+  substepping.c \
 	$(TRIANGLESRC) $(PARMETISSRC) $(MPIFILE) $(NETCDFSRC)
 OBJS = $(SRCS:.c=.o)
 
