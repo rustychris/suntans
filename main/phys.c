@@ -1749,9 +1749,6 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
   int i, ib, iptr, boundary_index, nf, j, jptr, k, nc, nc1, nc2, ne, 
   k0, kmin, kmax;
   REAL *a, *b, *c, fab1, fab2, fab3, sum, def1, def2, dgf, Cz, tempu; //AB3
-  // additions to test divergence averaging for w in momentum calc
-  REAL wedge[3], lambda[3], wik;
-  int aneigh;
 
   a = phys->a;
   b = phys->b;
@@ -1764,7 +1761,6 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
 
  // Adams Bashforth coefficients
   if(prop->n==1 || prop->wetdry) {
-//  if(prop->n==1){
     fab1=1;
     fab2=fab3=0;
 
