@@ -241,10 +241,12 @@ double GetValue(char *filename, char *str, int *status)
   FILE *ifile = MyFOpen(filename,"r","GetValue");
   *status = 0;
 
-  while(1) {
+  // RH: test for EOF, rather istr=="", to allow blank lines in the
+  // middle of suntans.dat
+  while(!feof(ifile)) {
     mygetline(ifile,istr,"");
     if(strlen(istr)==0)
-      break;
+      continue;
     getchunk(istr,ostr);
     if(!strcmp(ostr,str)) {
       for(ispace=strlen(ostr);ispace<strlen(istr);ispace++) 
