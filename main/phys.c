@@ -1955,7 +1955,7 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
             phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[k]*grid->Ac[i]);
           // RH DBG
           if( phys->stmp[i][k]!=phys->stmp[i][k] ) {
-            printf("Spinning on proc=%d, pid=%d\n",myproc,getpid());
+            printf("[p=%d] stmp[i=%d][k=%d] is nan. Spinning on pid=%d\n",myproc,i,k,getpid());
             while(1);
           }
           ASSERT_FINITE(phys->stmp[i][k]);
@@ -1973,20 +1973,19 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     GetMomentumFaceValues(phys->ut,phys->vc,phys->boundary_v,phys->u,grid,phys,prop,comm,myproc,prop->nonlinear);
 
     // Conservative method assumes ut is a flux
-    if(prop->conserveMomentum)
+    if(prop->conserveMomentum) {
       for(jptr=grid->edgedist[0];jptr<grid->edgedist[5];jptr++) {
         j=grid->edgep[jptr];
         
         for(k=grid->etop[j];k<grid->Nke[j];k++)
           phys->ut[j][k]*=grid->dzf[j][k];
       }
-
+    }
     // Now compute the cell-centered source terms and put them into stmp.
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
       i=grid->cellp[iptr];
 
-      for(k=0;k<grid->Nk[i];k++) 
-        phys->stmp2[i][k]=0;
+      // RH removed zeroing of stmp2, it's done above already
 
       // Store dzz in a since for conservative scheme need to divide by depth (since ut is a flux)
       if(prop->conserveMomentum) {

@@ -32,11 +32,11 @@
 // and dry.
 // possible that this should be significantly larger than
 // the CG epsilon
-#define DRYCELLHEIGHT 5e-4
+#define DRYCELLHEIGHT 1e-3
 
 // merge top layer with next below when it is thinner 
 // than this
-#define DZMIN_SURFACE (2*DRYCELLHEIGHT)
+#define DZMIN_SURFACE (20*DRYCELLHEIGHT)
 
 // Cell with depth less than this will be propped up to
 // to this deep.  should be less than DRYCELLHEIGHT

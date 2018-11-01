@@ -29,8 +29,8 @@ int getTimeRecBnd(REAL nctime, REAL *time, int nt);
  * Usage: OpenBoundaryFluxes(q,ubnew,ubn,grid,phys,prop);
  * ----------------------------------------------------
  * This will update the boundary flux at the edgedist[2] to edgedist[3] edges.
- * 
- * Note that phys->uold,vold contain the velocity at time step n-1 and 
+ *
+ * Note that phys->uold,vold contain the velocity at time step n-1 and
  * phys->uc,vc contain it at time step n.
  *
  * The radiative open boundary condition does not work yet!!!  For this reason c[k] is

@@ -1895,7 +1895,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
     dimidone[0] = dimid_Nc;
     if ((retval = nc_def_var(ncid,"dv",NC_DOUBLE,1,dimidone,&varid)))
       ERR(retval);
-    nc_addattr(ncid, varid,"stanford_name","sea_floor_depth_below_geoid");
+    nc_addattr(ncid, varid,"standard_name","sea_floor_depth_below_geoid");
     nc_addattr(ncid, varid,"long_name","seafloor depth");
     nc_addattr(ncid, varid,"units","m");
     nc_addattr(ncid, varid,"mesh","suntans_mesh");
@@ -2686,7 +2686,7 @@ void InitialiseAverageNCugridMerge(propT *prop, gridT *grid, averageT *average, 
     dimidone[0] = dimid_Nc;
     if ((retval = nc_def_var(ncid,"dv",NC_DOUBLE,1,dimidone,&varid)))
       ERR(retval);
-    nc_addattr(ncid, varid,"stanford_name","sea_floor_depth_below_geoid");
+    nc_addattr(ncid, varid,"standard_name","sea_floor_depth_below_geoid");
     nc_addattr(ncid, varid,"long_name","seafloor depth");
     nc_addattr(ncid, varid,"units","m");
     nc_addattr(ncid, varid,"mesh","suntans_mesh");
@@ -3500,7 +3500,7 @@ void InitialiseAverageNCugrid(propT *prop, gridT *grid, averageT *average, int m
     dimidone[0] = dimid_Nc;
     if ((retval = nc_def_var(ncid,"dv",NC_DOUBLE,1,dimidone,&varid)))
       ERR(retval);
-    nc_addattr(ncid, varid,"stanford_name","sea_floor_depth_below_geoid");
+    nc_addattr(ncid, varid,"standard_name","sea_floor_depth_below_geoid");
     nc_addattr(ncid, varid,"long_name","seafloor depth");
     nc_addattr(ncid, varid,"units","m");
     nc_addattr(ncid, varid,"mesh","suntans_mesh");
