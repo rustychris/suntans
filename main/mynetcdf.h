@@ -50,12 +50,13 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm);
 //void UpdateBdyNC(propT *prop, gridT *grid, int myproc,MPI_Comm comm);
 size_t returndimlenBC(int ncid, char *dimname);
 int getTimeRecBnd(REAL nctime, REAL *time, int nt);
-void ReadInitialNCcoord(propT *prop, gridT *grid, int *Nci, int *Nki, int *T0, int myproc);
+void ReadInitialNCcoord(propT *prop, gridT *grid, int *Nci, int *Nei, int *Nki, int *T0, int myproc);
 int getICtime(propT *prop, int Nt, int myproc);
 void ReturnFreeSurfaceNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nci, int T0, int myproc);
 void ReturnTemperatureNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nci, int Nki, int T0, int myproc);
 void ReturnSalinityNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nci, int Nki, int T0, int myproc);
 void ReturnAgeNC(propT *prop, gridT *grid, REAL *htmp, int Nci, int Nki, int T0, int myproc);
+void ReturnZ0BNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nei, int T0, int myproc);
 int MPI_NCOpen(char *file, int perms, char *caller, int myproc);
 int MPI_NCClose(int ncid);
 #endif

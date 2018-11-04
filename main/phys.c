@@ -221,6 +221,7 @@ void AllocatePhysicalVariables(gridT *grid, physT **phys, propT *prop)
   (*phys)->tau_B = (REAL *)SunMalloc(Ne*sizeof(REAL),"AllocatePhysicalVariables");
   (*phys)->CdT = (REAL *)SunMalloc(Ne*sizeof(REAL),"AllocatePhysicalVariables");
   (*phys)->CdB = (REAL *)SunMalloc(Ne*sizeof(REAL),"AllocatePhysicalVariables");
+  (*phys)->z0B_spec = (REAL *)SunMalloc(Ne*sizeof(REAL),"AllocatePhysicalVariables");
 
   /* new interpolation variables */
   // loop over the nodes
@@ -478,6 +479,7 @@ void FreePhysicalVariables(gridT *grid, physT *phys, propT *prop)
   free(phys->tau_B);
   free(phys->CdT);
   free(phys->CdB);
+  free(phys->z0B_spec);
   free(phys->u);
   free(phys->D);
   free(phys->utmp);
@@ -529,7 +531,7 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   int i, j, k, ktop, Nc=grid->Nc;
   REAL z, *stmp;
   REAL *ncscratch;
-  int Nci, Nki, T0;
+  int Nci, Nei, Nki, T0;
 
 
   prop->nstart=0;
@@ -539,12 +541,14 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   prop->nctime = prop->toffSet*86400.0 + prop->nstart*prop->dt;
 
   if (prop->readinitialnc>0){
-    ReadInitialNCcoord(prop,grid,&Nci,&Nki,&T0,myproc);
+    ReadInitialNCcoord(prop,grid,&Nci,&Nei,&Nki,&T0,myproc);
 
-    printf("myproc: %d, Nci: %d, Nki: %d, T0: %d\n",myproc,Nci,Nki,T0);
+    printf("myproc: %d, Nci: %d, Nei: %d, Nki: %d T0: %d\n",myproc,Nci,Nei,Nki,T0);
 
     // Initialise a scratch variable for reading arrays
-    ncscratch = (REAL *)SunMalloc(Nki*Nci*sizeof(REAL),"InitializePhysicalVariables");
+    // this is used both for 3D, cell-centered values *and* 2D edge-centered
+    // values (roughness), so make it big enough for either.
+    ncscratch = (REAL *)SunMalloc( max(Nei,Nki*Nci)*sizeof(REAL),"InitializePhysicalVariables");
 
   }
   // Need to update the vertical grid and fix any cells in which
@@ -613,7 +617,7 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
       }
     SunFree(stmp,grid->Nkmax*sizeof(REAL),"InitializePhysicalVariables");
   } else if(prop->readinitialnc && prop->beta > 0){
-     ReturnSalinityNC(prop,phys,grid,ncscratch,Nci,Nki,T0,myproc);
+    ReturnSalinityNC(prop,phys,grid,ncscratch,Nci,Nki,T0,myproc);
   } else {
     for(i=0;i<Nc;i++) {
       z = 0;
@@ -677,6 +681,15 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   }
 
 
+  // RH: prep for spatially-variable roughness
+  for(j=0;j<grid->Ne;j++) 
+    phys->z0B_spec[j]=prop->z0B;
+  if(prop->readinitialnc) {
+    // note that z0B may not be specified in the NC, which is why
+    // it gets set to the default value from suntans.dat first.
+    ReturnZ0BNC(prop, phys, grid, ncscratch, Nei, T0, myproc);
+  }
+  
   // Need to compute the velocity vectors at the cell centers based
   // on the initialized velocities at the faces.
   ComputeUC(phys->uc, phys->vc, phys, grid, myproc, prop->interp);
@@ -748,13 +761,12 @@ void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
   if(prop->z0B==0) 
     for(j=0;j<grid->Ne;j++) 
       phys->CdB[j]=prop->CdB;
-  else
+  else {
     for(j=0;j<grid->Ne;j++) {
-      phys->CdB[j]=pow(log(0.5*grid->dzf[j][grid->Nke[j]-1]/prop->z0B)/KAPPA_VK,-2);
+      phys->CdB[j]=pow(log(0.5*grid->dzf[j][grid->Nke[j]-1]/phys->z0B_spec[j])/KAPPA_VK,-2);
       //printf("phys->CdB[%d]=%f, dzf = %f, z0B = %f\n",j,phys->CdB[j],grid->dzf[j][grid->Nke[j]-1],prop->z0B);
     }
-
-
+  }
 
   for(j=0;j<grid->Ne;j++)
     if(grid->dzf[j][grid->Nke[j]-1]<BUFFERHEIGHT && grid->etop[j]==grid->Nke[j]-1){

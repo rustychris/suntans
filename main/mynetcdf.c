@@ -4974,16 +4974,17 @@ void ReadBndNCcoord(int ncid, propT *prop, gridT *grid, int myproc, MPI_Comm com
 * Returns a zero if the dimension is not found and does not raise an error
 */
 size_t returndimlenBC(int ncid, char *dimname){
-int retval;
-int dimid;
-size_t dimlen;
+  int retval;
+  int dimid;
+  size_t dimlen;
+  
+  if ((retval =nc_inq_dimid(ncid,dimname,&dimid)))
+    return 0;
 
-if ((retval =nc_inq_dimid(ncid,dimname,&dimid)))
-return 0;
+  if ((retval = nc_inq_dimlen(ncid,dimid, &dimlen)))
+    ERR(retval);
 
-if ((retval = nc_inq_dimlen(ncid,dimid, &dimlen)))
-ERR(retval);
-return dimlen;
+  return dimlen;
 } // End function
 
 /*###############################################################
@@ -4997,12 +4998,13 @@ return dimlen;
  * Reads the dimensions from the initial condition netcdf file
  *
  */
- void ReadInitialNCcoord(propT *prop, gridT *grid, int *Nci, int *Nki, int *T0, int myproc){
+void ReadInitialNCcoord(propT *prop, gridT *grid, int *Nci, int *Nei, int *Nki, int *T0, int myproc){
 
-    int Nt;
+  int Nt;
 
    // Read the spatial dimension sizes
     *Nci = (int)returndimlenBC(prop->initialNCfileID,"Nc");
+    *Nei = (int)returndimlenBC(prop->initialNCfileID,"Ne"); // will be 0 if not present.
     *Nki = (int)returndimlenBC(prop->initialNCfileID,"Nk");
 
     // Check the dimension with the grid
@@ -5119,7 +5121,7 @@ void ReturnSalinityNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nci
 /*
  * Function: ReturnTemperatureNC()
  * -------------------------------
- * Reads the salinity from the initial condition netcdf array
+ * Reads the temperature from the initial condition netcdf array
  *
  */
 void ReturnTemperatureNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nci, int Nki, int T0, int myproc){
@@ -5204,6 +5206,37 @@ void ReturnAgeNC(propT *prop, gridT *grid, REAL *htmp, int Nci, int Nki, int T0,
       }
   }
 
+} // End function
+
+/*
+ * Function: ReturnZ0BNC()
+ * -------------------------------
+ * Reads the edge-centered roughness from the initial condition netcdf array
+ *
+ */
+void ReturnZ0BNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nei, int T0, int myproc){
+  int j,ind;
+  size_t start[] = {T0, 0};
+  size_t count[] = {1, Nei};
+
+  int varid, retval;
+  int ncid = prop->initialNCfileID;
+
+  if ((retval = nc_inq_varid(ncid, "z0B", &varid))) {
+    if(VERBOSE>1 && myproc==0) 
+      printf("No roughness in netcdf file.  Will use %.3e from suntans.dat...\n",prop->z0B);
+    return;
+  }
+  if(VERBOSE>1 && myproc==0) 
+    printf("Reading roughness from netcdf variable 'z0B'...\n");
+
+  if ((retval = nc_get_vara_double(ncid, varid, start, count, &htmp[0]))) 
+    ERR(retval); 
+
+  for(j=0;j<grid->Ne;j++) {
+    ind = grid->eptr[j]; // I think eptr is correct, but not 100% sure
+    phys->z0B_spec[j]=htmp[ind];
+  }
 } // End function
 
 

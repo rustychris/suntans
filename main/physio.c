@@ -507,6 +507,10 @@ void ReadPhysicalVariables(gridT *grid, physT *phys, propT *prop, int myproc, MP
 
   UpdateDZ(grid,phys,prop, 0,myproc);
 
+  // RH: copy scalar z0B to z0B_spec
+  for(j=0;j<grid->Ne;j++)
+    phys->z0B_spec[j]=prop->z0B;
+
   // cell centered velocity computed so that this does not 
   // need to be reconsidered 
   ComputeUC(phys->uc, phys->vc, phys,grid, myproc, prop->interp);

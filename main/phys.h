@@ -86,6 +86,8 @@ typedef struct _physT {
   REAL **nu_lax;
   REAL *tau_T;
   REAL *tau_B;
+  REAL *z0B_spec; // for externally specified, spatially varying roughness
+  // RH do we really need this? REAL *z0B_used; // record result of any specified or depth-varied roughness
   REAL *CdT;
   REAL *CdB;
   REAL **qT;
