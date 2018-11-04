@@ -157,7 +157,7 @@ void AllocatePhysicalVariables(gridT *grid, physT **phys, propT *prop)
       printf("Error!  Nkc(=%d)<Nke(=%d) at edge %d\n",grid->Nkc[j],grid->Nke[j],j);
       flag = 1;
     }
-    // allocate memory for the max (cell-centered) quanity on the edge (from definition above)
+    // allocate memory for the max (cell-centered) quantity on the edge (from definition above)
     (*phys)->u[j] = (REAL *)SunMalloc(grid->Nkc[j]*sizeof(REAL),"AllocatePhysicalVariables");
     (*phys)->utmp[j] = (REAL *)SunMalloc(grid->Nkc[j]*sizeof(REAL),"AllocatePhysicalVariables");
     (*phys)->utmp2[j] = (REAL *)SunMalloc(grid->Nkc[j]*sizeof(REAL),"AllocatePhysicalVariables");
@@ -517,8 +517,8 @@ void FreePhysicalVariables(gridT *grid, physT *phys, propT *prop)
 }
 
 /*
- * Function: InitializePhyiscalVariables
- * Usage: InitializePhyiscalVariables(grid,phys,prop,myproc,comm);
+ * Function: InitializePhysicalVariables
+ * Usage: InitializePhysicalVariables(grid,phys,prop,myproc,comm);
  * ---------------------------------------------------------------
  * This function initializes the physical variables by calling
  * the routines defined in the file initialize.c
@@ -653,11 +653,15 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   // Initialize the velocity field 
   for(j=0;j<grid->Ne;j++) {
     z = 0;
-    for(k=0;k<grid->Nkc[j];k++) {
+    for(k=0;k<grid->Nke[j];k++) {
       z-=grid->dz[k]/2;
       phys->u[j][k]=ReturnHorizontalVelocity(
           grid->xe[j],grid->ye[j],grid->n1[j],grid->n2[j],z);
       z-=grid->dz[k]/2;
+    }
+    // RH: set edge velocity below bed to 0.0.
+    for(;k<grid->Nkc[j];k++) {
+      phys->u[j][k]=0.0;
     }
   }
   
@@ -1961,10 +1965,11 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
           ASSERT_FINITE(phys->stmp[i][k]);
         }
         // Top cell is filled with momentum from neighboring cells
-        if(prop->conserveMomentum)
+        if(prop->conserveMomentum) {
           for(k=grid->etop[ne];k<grid->ctop[i];k++)
             phys->stmp[i][grid->ctop[i]]+=
               phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[grid->ctop[i]]*grid->Ac[i]);
+        }
         ASSERT_FINITE(phys->stmp[i][grid->ctop[i]]);
       }
     }
@@ -2012,13 +2017,14 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
         }
 
         // Top cell is filled with momentum from neighboring cells
-        if(prop->conserveMomentum)
+        if(prop->conserveMomentum) {
           for(k=grid->etop[ne];k<grid->ctop[i];k++) {
             phys->stmp2[i][grid->ctop[i]]+=
               phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[k]*grid->Ac[i]);
 
             ASSERT_FINITE(phys->stmp2[i][grid->ctop[i]]);
           }
+        }
       }
     }
 
@@ -2082,12 +2088,22 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
                       (phys->w[i][k]+fabs(phys->w[i][k]))*phys->vc[i][k]+
                       (phys->w[i][k]-fabs(phys->w[i][k]))*phys->vc[i][k-1]);
         }
-        
+
+        // here a coefficients are for x-mom, b for y-mom
+        // a[k] is the flux into (?) layer k, from layer k-1
+
+        // these are questionable -- is there really a flux into the top layer
+        // from above??
         a[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->uc[i][grid->ctop[i]];
         b[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->vc[i][grid->ctop[i]];
+        // RH DBG
+        a[grid->ctop[i]]=0;
+        b[grid->ctop[i]]=0;
+
         a[grid->Nk[i]]=0;
         b[grid->Nk[i]]=0;
-        
+
+
         for(k=grid->ctop[i];k<grid->Nk[i];k++) {
           phys->stmp[i][k]+=(a[k]-a[k+1])/grid->dzz[i][k];
           phys->stmp2[i][k]+=(b[k]-b[k+1])/grid->dzz[i][k];
@@ -2146,35 +2162,40 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     else
       kmin = grid->ctop[nc2];
 
-    for(k=kmin;k<grid->Nke[j];k++) {
-      // Eqn 58 and Eqn 59
-      // seems like nu_lax should be distance weighted as in Eqn 60
-      a[k]=(prop->nu_H+0.5*(phys->nu_lax[nc1][k]+phys->nu_lax[nc2][k]))*
-        (phys->uc[nc2][k]-phys->uc[nc1][k])*grid->df[j]/grid->dg[j];
-      b[k]=(prop->nu_H+0.5*(phys->nu_lax[nc1][k]+phys->nu_lax[nc2][k]))*
-        (phys->vc[nc2][k]-phys->vc[nc1][k])*grid->df[j]/grid->dg[j];
-      phys->stmp[nc1][k]-=a[k]/grid->Ac[nc1];
-      phys->stmp[nc2][k]+=a[k]/grid->Ac[nc2];
-      phys->stmp2[nc1][k]-=b[k]/grid->Ac[nc1];
-      phys->stmp2[nc2][k]+=b[k]/grid->Ac[nc2];
-
-      ASSERT_FINITE(phys->stmp[nc1][k]);
-      ASSERT_FINITE(phys->stmp[nc2][k]);
+    if( prop->nu_H==0 && prop->nonlinear!=2 ) {
+      // no horizontal diffusion to worry about
+    } else {
+      for(k=kmin;k<grid->Nke[j];k++) {
+        // Eqn 58 and Eqn 59
+        // seems like nu_lax should be distance weighted as in Eqn 60
+        a[k]=(prop->nu_H+0.5*(phys->nu_lax[nc1][k]+phys->nu_lax[nc2][k]))*
+          (phys->uc[nc2][k]-phys->uc[nc1][k])*grid->df[j]/grid->dg[j];
+        b[k]=(prop->nu_H+0.5*(phys->nu_lax[nc1][k]+phys->nu_lax[nc2][k]))*
+          (phys->vc[nc2][k]-phys->vc[nc1][k])*grid->df[j]/grid->dg[j];
+        phys->stmp[nc1][k]-=a[k]/grid->Ac[nc1];
+        phys->stmp[nc2][k]+=a[k]/grid->Ac[nc2];
+        phys->stmp2[nc1][k]-=b[k]/grid->Ac[nc1];
+        phys->stmp2[nc2][k]+=b[k]/grid->Ac[nc2];
+        
+        ASSERT_FINITE(phys->stmp[nc1][k]);
+        ASSERT_FINITE(phys->stmp[nc2][k]);
+      }
     }
-
     // compute wall-drag for diffusion of momentum BC (only on side walls)
     // Eqn 64 and Eqn 65 and Eqn 58
-    for(k=grid->Nke[j];k<grid->Nk[nc1];k++) {
-      phys->stmp[nc1][k]+=
-        prop->CdW*fabs(phys->uc[nc1][k])*phys->uc[nc1][k]*grid->df[j]/grid->Ac[nc1];
-      phys->stmp2[nc1][k]+=
-        prop->CdW*fabs(phys->vc[nc1][k])*phys->vc[nc1][k]*grid->df[j]/grid->Ac[nc1];
-    }
-    for(k=grid->Nke[j];k<grid->Nk[nc2];k++) {
-      phys->stmp[nc2][k]+=
-        prop->CdW*fabs(phys->uc[nc2][k])*phys->uc[nc2][k]*grid->df[j]/grid->Ac[nc2];
-      phys->stmp2[nc2][k]+=
-        prop->CdW*fabs(phys->vc[nc2][k])*phys->vc[nc2][k]*grid->df[j]/grid->Ac[nc2];
+    if(prop->CdW>0.0) {
+      for(k=grid->Nke[j];k<grid->Nk[nc1];k++) {
+        phys->stmp[nc1][k]+=
+          prop->CdW*fabs(phys->uc[nc1][k])*phys->uc[nc1][k]*grid->df[j]/grid->Ac[nc1];
+        phys->stmp2[nc1][k]+=
+          prop->CdW*fabs(phys->vc[nc1][k])*phys->vc[nc1][k]*grid->df[j]/grid->Ac[nc1];
+      }
+      for(k=grid->Nke[j];k<grid->Nk[nc2];k++) {
+        phys->stmp[nc2][k]+=
+          prop->CdW*fabs(phys->uc[nc2][k])*phys->uc[nc2][k]*grid->df[j]/grid->Ac[nc2];
+        phys->stmp2[nc2][k]+=
+          prop->CdW*fabs(phys->vc[nc2][k])*phys->vc[nc2][k]*grid->df[j]/grid->Ac[nc2];
+      }
     }
   }
 
@@ -4573,7 +4594,7 @@ static void ComputeUCPerot(REAL **u, REAL **uc, REAL **vc, gridT *grid) {
       uc[n][k]=0;
       vc[n][k]=0;
     }
-    // over all interior cells
+    // over all non-surface layers
     for(k=grid->ctop[n]+1;k<grid->Nk[n];k++) {
       // over each face
       for(nf=0;nf<grid->nfaces[n];nf++) {
@@ -4581,11 +4602,11 @@ static void ComputeUCPerot(REAL **u, REAL **uc, REAL **vc, gridT *grid) {
         if(!(grid->smoothbot) || k<grid->Nke[ne]){
           uc[n][k]+=u[ne][k]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne]*grid->dzf[ne][k];
           vc[n][k]+=u[ne][k]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne]*grid->dzf[ne][k];
-        }
-        else{	
+        } else {
+          printf("Don't do this!");
           uc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne]*grid->dzf[ne][grid->Nke[ne]-1];
           vc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne]*grid->dzf[ne][grid->Nke[ne]-1];
-	}
+        }
       }
 
       // In case of divide by zero (shouldn't happen)
@@ -4602,19 +4623,17 @@ static void ComputeUCPerot(REAL **u, REAL **uc, REAL **vc, gridT *grid) {
     k=grid->ctop[n];
     // over each face
     for(nf=0;nf<grid->nfaces[n];nf++) {
-	ne = grid->face[n*grid->maxfaces+nf];
-	if(!(grid->smoothbot) || k<grid->Nke[ne]){
-	    uc[n][k]+=u[ne][k]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
-	    vc[n][k]+=u[ne][k]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
-	}
-	else{	
-	    uc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
-	    vc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];        
-	}
+      ne = grid->face[n*grid->maxfaces+nf];
+      if(!(grid->smoothbot) || k<grid->Nke[ne]){
+        uc[n][k]+=u[ne][k]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
+        vc[n][k]+=u[ne][k]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
+      } else {
+        uc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
+        vc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];        
+      }
     }
     uc[n][k]/=grid->Ac[n];
     vc[n][k]/=grid->Ac[n];
-   
   }
 }
 static void ComputeUCLSQ(REAL **u, REAL **uc, REAL **vc, gridT *grid, physT *phys){
