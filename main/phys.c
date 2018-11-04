@@ -2092,11 +2092,11 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
         // here a coefficients are for x-mom, b for y-mom
         // a[k] is the flux into (?) layer k, from layer k-1
 
-        // these are questionable -- is there really a flux into the top layer
+        // RH: these are questionable -- is there really a flux into the top layer
         // from above??
         a[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->uc[i][grid->ctop[i]];
         b[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->vc[i][grid->ctop[i]];
-        // RH DBG
+        // RH -- I don't think that should be there...
         a[grid->ctop[i]]=0;
         b[grid->ctop[i]]=0;
 
