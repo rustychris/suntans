@@ -407,6 +407,9 @@ void OutputPhysicalVariables(gridT *grid, physT *phys, propT *prop,int myproc, i
     for(i=0;i<grid->Nc;i++) 
       fwrite(phys->s0[i],sizeof(REAL),grid->Nk[i],prop->StoreFID);
 
+    // RH: include roughness output.
+    fwrite(phys->z0B_spec,sizeof(REAL),grid->Ne,prop->StoreFID);
+
     fclose(prop->StoreFID);
   }
 
@@ -497,6 +500,20 @@ void ReadPhysicalVariables(gridT *grid, physT *phys, propT *prop, int myproc, MP
   for(i=0;i<grid->Nc;i++) 
     if(fread(phys->s0[i],sizeof(REAL),grid->Nk[i],prop->StartFID) != grid->Nk[i])
       printf("Error reading phys->s0[i]\n");
+
+  // Optionally read roughness data if it is there
+  int nread=fread(phys->z0B_spec,sizeof(REAL),grid->Ne,prop->StartFID);
+  if(nread==0) {
+    printf("Restart file did not include roughness\n");
+    for(j=0;j<grid->Ne;j++) 
+      phys->z0B_spec[j]=prop->z0B;
+  } else if(nread==grid->Ne*sizeof(REAL)) {
+    printf("Successfully read roughness from restart\n");
+  } else {
+    printf("WARNING: partial read (%d bytes) for roughness.  That's not good\n",nread);
+    // could mean that other data is corrupt.
+    exit(EXIT_WRITING);
+  }
   fclose(prop->StartFID);
 
   // RH: unsure of these..

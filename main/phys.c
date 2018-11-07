@@ -680,7 +680,6 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
     }
   }
 
-
   // RH: prep for spatially-variable roughness
   for(j=0;j<grid->Ne;j++) 
     phys->z0B_spec[j]=prop->z0B;
@@ -1946,10 +1945,19 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
       i=grid->cellp[iptr];
 
+      if (grid->ctop[i]==grid->Nk[i]) 
+        continue; // dry cell.
+
       // Store dzz in a since for conservative scheme need to divide by depth (since ut is a flux)
       if(prop->conserveMomentum) {
-        for(k=grid->ctop[i];k<grid->Nk[i];k++)
+        for(k=grid->ctop[i];k<grid->Nk[i];k++) {
           a[k]=grid->dzz[i][k];
+
+          // RH: trying to make conserveMomentum usable with wetdry
+          // give up on really thin cells, though.
+          if(a[k]<0.001)
+            a[k]=0.001;
+        }
       } else {
         for(k=grid->ctop[i];k<grid->Nk[i];k++)
           a[k]=1.0;
@@ -1972,15 +1980,30 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
           // RH DBG
           if( phys->stmp[i][k]!=phys->stmp[i][k] ) {
             printf("[p=%d] stmp[i=%d][k=%d] is nan. Spinning on pid=%d\n",myproc,i,k,getpid());
+            printf(" num=%f  den=%f\n",
+                   phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf],
+                   (a[k]*grid->Ac[i]));
+            printf("  a[k=%d]=%f  ctop=%d  Nk=%d\n",k,a[k],grid->ctop[i],grid->Nk[i]);
             while(1);
           }
           ASSERT_FINITE(phys->stmp[i][k]);
         }
         // Top cell is filled with momentum from neighboring cells
         if(prop->conserveMomentum) {
-          for(k=grid->etop[ne];k<grid->ctop[i];k++)
-            phys->stmp[i][grid->ctop[i]]+=
-              phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[grid->ctop[i]]*grid->Ac[i]);
+          for(k=grid->etop[ne];k<grid->ctop[i];k++) {
+            double inc=phys->ut[ne][k]*phys->u[ne][k]*
+              grid->df[ne]*grid->normal[i*grid->maxfaces+nf]
+              / (a[grid->ctop[i]]*grid->Ac[i]);
+            if(inc != inc) {
+              printf("[p=%d] (x) top cell tried to add %f\n",myproc,inc);
+              printf("   ctop=%d  Nk[i=%d]=%d\n",grid->ctop[i],i,grid->Nk[i]);
+              printf("   num=%f  den=%f\n",
+                     phys->ut[ne][k]*phys->u[ne][k]*
+                     grid->df[ne]*grid->normal[i*grid->maxfaces+nf],
+                     (a[grid->ctop[i]]*grid->Ac[i]));
+            }
+            phys->stmp[i][grid->ctop[i]]+=inc;
+          }
         }
         ASSERT_FINITE(phys->stmp[i][grid->ctop[i]]);
       }
@@ -2002,12 +2025,19 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
       i=grid->cellp[iptr];
 
+      if (grid->ctop[i]==grid->Nk[i]) 
+        continue; // dry cell.
+
       // RH removed zeroing of stmp2, it's done above already
 
       // Store dzz in a since for conservative scheme need to divide by depth (since ut is a flux)
       if(prop->conserveMomentum) {
-        for(k=grid->ctop[i];k<grid->Nk[i];k++)
+        for(k=grid->ctop[i];k<grid->Nk[i];k++) {
           a[k]=grid->dzz[i][k];
+          // RH: trying to get this working with wetdry
+          if( a[k]<0.001)
+            a[k]=0.001;
+        }
       } else {
         for(k=grid->ctop[i];k<grid->Nk[i];k++)
           a[k]=1.0;
@@ -2031,8 +2061,18 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
         // Top cell is filled with momentum from neighboring cells
         if(prop->conserveMomentum) {
           for(k=grid->etop[ne];k<grid->ctop[i];k++) {
-            phys->stmp2[i][grid->ctop[i]]+=
-              phys->ut[ne][k]*phys->u[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[k]*grid->Ac[i]);
+            double inc=phys->ut[ne][k]*phys->u[ne][k]*
+              grid->df[ne]*grid->normal[i*grid->maxfaces+nf]
+              / (a[grid->ctop[i]]*grid->Ac[i]);
+            if(inc != inc) {
+              printf("[p=%d] (y) top cell tried to add %f\n",myproc,inc);
+              printf("   ctop=%d  Nk[i=%d]=%d\n",grid->ctop[i],i,grid->Nk[i]);
+              printf("   num=%f  den=%f\n",
+                     phys->ut[ne][k]*phys->u[ne][k]*
+                     grid->df[ne]*grid->normal[i*grid->maxfaces+nf],
+                     (a[grid->ctop[i]]*grid->Ac[i]));
+            }
+            phys->stmp2[i][grid->ctop[i]]+=inc;
 
             ASSERT_FINITE(phys->stmp2[i][grid->ctop[i]]);
           }
@@ -2043,6 +2083,12 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     // stmp2 holds the v-component of advection of momentum and
     // note that this could also be sped up by pulling out common
     // factors to reduce redundant calculations
+
+    // RH: for safety, fill a[k] with crazy.
+    for(k=0;k<grid->Nkmax+1;k++) {
+      a[k]=1000000000.0;
+      b[k]=1000000000.0;
+    }
 
     /* Vertical advection of momentum calc */
     // Only if thetaM<0, otherwise use implicit scheme in UPredictor()
@@ -4812,7 +4858,11 @@ void ReadProperties(propT **prop, gridT *grid, int myproc)
   // -Use backward Euler for vertical advection of horizontal momentum (thetaM=1)
   // -Update new cells (newcells=1)
   if((*prop)->wetdry) {
-    (*prop)->conserveMomentum = 0;
+    // RH: it's actually pretty bad to disable this, and it may be
+    // causing real problems.  Try patching the wetdry situation by
+    // limiting small dzz, rather than globally giving up on conservation.
+
+    // (*prop)->conserveMomentum = 0;
     // RH: old stable code had explicit vertical advection of horizontal momentum.
     //    allow this to come in from the input file.
     // (*prop)->thetaM = 1;//Fully implicit
