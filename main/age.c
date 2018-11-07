@@ -71,11 +71,11 @@ static void InitializeAgeVariables(gridT *grid, propT *prop, int myproc){
 
     int i,k,Nc=grid->Nc;
     REAL *ncscratch;
-    int Nci, Nki, T0;
+    int Nci, Nei, Nki, T0;
 
     // Read the netcdf properties and allocate a scratch array for reading in the data
     if (prop->readinitialnc>0){
-	ReadInitialNCcoord(prop,grid,&Nci,&Nki,&T0,myproc);
+        ReadInitialNCcoord(prop,grid,&Nci,&Nei,&Nki,&T0,myproc);
 	ncscratch = (REAL *)SunMalloc(Nki*Nci*sizeof(REAL),"InitializeAgeVariables");
     }
 
