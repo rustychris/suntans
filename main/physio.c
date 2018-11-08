@@ -507,10 +507,11 @@ void ReadPhysicalVariables(gridT *grid, physT *phys, propT *prop, int myproc, MP
     printf("Restart file did not include roughness\n");
     for(j=0;j<grid->Ne;j++) 
       phys->z0B_spec[j]=prop->z0B;
-  } else if(nread==grid->Ne*sizeof(REAL)) {
+  } else if(nread==grid->Ne) {
     printf("Successfully read roughness from restart\n");
   } else {
-    printf("WARNING: partial read (%d bytes) for roughness.  That's not good\n",nread);
+    printf("WARNING: partial read (%d records) for roughness.  That's not good\n",nread);
+    printf("   expected %d records, got %d\n",grid->Ne,nread);
     // could mean that other data is corrupt.
     exit(EXIT_WRITING);
   }
