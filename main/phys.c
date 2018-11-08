@@ -1503,8 +1503,8 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
         if(DBG_PROC==myproc) printf("UpdateScalars for temperature\n");
 #endif
         UpdateScalars(grid,phys,prop,phys->wnew,phys->T,phys->boundary_T,phys->Cn_T,
-            prop->kappa_T,prop->kappa_TH,phys->kappa_tv,prop->theta,
-            phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,0,prop->TVDtemp);
+                      prop->kappa_T,prop->kappa_TH,phys->kappa_tv,prop->theta,
+                      phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,0,prop->TVDtemp,1);
 
 #ifdef DBG_PROC
         if(DBG_PROC==myproc) printf("UpdateScalars for temperature return\n");
@@ -1537,23 +1537,23 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       // Update the salinity only if beta is nonzero in suntans.dat
       if(prop->beta) {
         t0=Timer();
-	if(prop->metmodel>0){
-	    SaltSource(phys->wtmp,phys->uold,grid,phys,prop,met);
-	    UpdateScalars(grid,phys,prop,phys->wnew,phys->s,phys->boundary_s,phys->Cn_R,
-		prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,
-		phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,1,prop->TVDsalt);
-	}else{
+        if(prop->metmodel>0){
+          SaltSource(phys->wtmp,phys->uold,grid,phys,prop,met);
+          UpdateScalars(grid,phys,prop,phys->wnew,phys->s,phys->boundary_s,phys->Cn_R,
+                        prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,
+                        phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,1,prop->TVDsalt,1);
+        }else{
 #ifdef DBG_PROC
           if(DBG_PROC==myproc) printf("UpdateScalars for salt\n");
 #endif
           UpdateScalars(grid,phys,prop,phys->wnew,phys->s,phys->boundary_s,phys->Cn_R,
                         prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,
-                        NULL,NULL,NULL,NULL,0,0,comm,myproc,1,prop->TVDsalt);
+                        NULL,NULL,NULL,NULL,0,0,comm,myproc,1,prop->TVDsalt,1);
 #ifdef DBG_PROC
           if(DBG_PROC==myproc) printf("UpdateScalars for salt returns\n");
 #endif
-	}
-	ISendRecvCellData3D(phys->s,grid,myproc,comm);
+        }
+        ISendRecvCellData3D(phys->s,grid,myproc,comm);
 
 	if(prop->metmodel>0){
 	  //Communicate across processors

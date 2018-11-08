@@ -36,7 +36,7 @@ REAL smin_value, smax_value;
 void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **scal, REAL **boundary_scal, REAL **Cn, 
     REAL kappa, REAL kappaH, REAL **kappa_tv, REAL theta,
     REAL **src1, REAL **src2, REAL *Ftop, REAL *Fbot, int alpha_top, int alpha_bot,
-    MPI_Comm comm, int myproc, int checkflag, int TVDscheme) 
+    MPI_Comm comm, int myproc, int checkflag, int TVDscheme, int adv_horizontal ) 
 {
   int i, iptr, j, jptr, ib, k, nf, ktop;
   int Nc=grid->Nc, normal, nc1, nc2, ne;
@@ -288,7 +288,12 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
       } else 
         sp=phys->stmp[nc2];
 
-      if(!(prop->TVD && prop->horiTVD)) {
+      if (!adv_horizontal) {
+        // ignore horizontal advection by choosing the advected concentration
+        // to be our own.
+        for(k=0;k<grid->Nke[ne];k++) 
+          temp[k]=phys->stmp[i][k];
+      } else if(!(prop->TVD && prop->horiTVD)) {
         for(k=0;k<grid->Nke[ne];k++) 
           temp[k]=UpWind(phys->utmp2[ne][k],
               phys->stmp[nc1][k],

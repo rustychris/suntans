@@ -71,12 +71,12 @@ static void InitializeAgeVariables(gridT *grid, propT *prop, int myproc){
 
     int i,k,Nc=grid->Nc;
     REAL *ncscratch;
-    int Nci, Nki, T0;
+    int Nci, Nei, Nki, T0;
 
     // Read the netcdf properties and allocate a scratch array for reading in the data
     if (prop->readinitialnc>0){
-	ReadInitialNCcoord(prop,grid,&Nci,&Nki,&T0,myproc);
-	ncscratch = (REAL *)SunMalloc(Nki*Nci*sizeof(REAL),"InitializeAgeVariables");
+      ReadInitialNCcoord(prop,grid,&Nci,&Nei,&Nki,&T0,myproc);
+      ncscratch = (REAL *)SunMalloc(Nki*Nci*sizeof(REAL),"InitializeAgeVariables");
     }
 
     for(i=0;i<Nc;i++) {
@@ -134,11 +134,8 @@ void UpdateAge(gridT *grid, physT *phys, propT *prop, MPI_Comm comm, int myproc)
 	  age->boundary_age[jptr-grid->edgedist[3]][k]=type3bc;
     }
 
-
-    //printf("Updating agec...\n");
-    //printf("prop->rtime = %f\n",prop->rtime);
-    UpdateScalars(grid,phys,prop,phys->wnew,age->agec,age->boundary_age,age->Cn_Ac,prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,NULL,NULL,NULL,NULL,0,0,comm,myproc,0,prop->TVDsalt);
-//    UpdateScalars(grid,phys,prop,phys->wnew,phys->agec,phys->boundary_age,phys->Cn_Ac,prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,0,prop->TVDsalt);
+    UpdateScalars(grid,phys,prop,phys->wnew,age->agec,age->boundary_age,age->Cn_Ac,prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,NULL,NULL,NULL,NULL,0,0,comm,myproc,0,prop->TVDsalt,1);
+    // UpdateScalars(grid,phys,prop,phys->wnew,phys->agec,phys->boundary_age,phys->Cn_Ac,prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,0,prop->TVDsalt,1);
 
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
       i = grid->cellp[iptr];
@@ -175,9 +172,8 @@ void UpdateAge(gridT *grid, physT *phys, propT *prop, MPI_Comm comm, int myproc)
     //    }
     //}
 
-    //UpdateScalars(grid,phys,prop,phys->wnew,phys->agealpha,phys->boundary_agealpha,phys->Cn_Aa, prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,0,prop->TVDsalt);
-    UpdateScalars(grid,phys,prop,phys->wnew,age->agealpha,age->boundary_agealpha,age->Cn_Aa, prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,NULL,NULL,NULL,NULL,0,0,comm,myproc,0,prop->TVDsalt);
-
+    // UpdateScalars(grid,phys,prop,phys->wnew,phys->agealpha,phys->boundary_agealpha,phys->Cn_Aa, prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,0,prop->TVDsalt,1);
+    UpdateScalars(grid,phys,prop,phys->wnew,age->agealpha,age->boundary_agealpha,age->Cn_Aa, prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,NULL,NULL,NULL,NULL,0,0,comm,myproc,0,prop->TVDsalt,1);
 
     // Alpha parameter source term
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {

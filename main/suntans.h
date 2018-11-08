@@ -57,6 +57,10 @@
 
 #define DEFAULTDATAFILE "suntans.dat"
 
+// 0: disable horizontal advection of turbulence
+// 1: enable
+#define HOR_ADV_TURBULENCE 0
+
 // define global variables for filenames
 char DATADIR[BUFFERLENGTH],
   DATAFILE[BUFFERLENGTH],

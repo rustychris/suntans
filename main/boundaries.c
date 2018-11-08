@@ -497,6 +497,7 @@ void InitBoundaryData(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
     if(bound->hasType2 && bound->hasSeg>0){
 	for (j=0;j<bound->Nseg;j++){
 	  bound->boundary_Q[j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->boundary_Q_t[0][j],bound->boundary_Q_t[1][j],bound->boundary_Q_t[2][j]);
+          // printf("Interpolated Q[seg=%d]=%.3f\n",j,bound->boundary_Q[j]);
 	}
 	// This function does the actual conversion
 	FluxtoUV(prop,grid,myproc,comm);

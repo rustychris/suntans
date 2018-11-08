@@ -133,8 +133,9 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
 #ifdef DBG_PROC
   if(DBG_PROC==myproc) printf("UpdateScalars for turb q\n");
 #endif
+  // for turbulence turn off horizontal advection
   UpdateScalars(grid,phys,prop,wnew,q,phys->boundary_tmp,phys->Cn_q,0,0,kappaT,thetaQ,phys->uold,phys->wtmp,
-		phys->htmp,phys->hold,1,1,comm,myproc,0,prop->TVDturb);
+                phys->htmp,phys->hold,1,1,comm,myproc,0,prop->TVDturb,HOR_ADV_TURBULENCE);
 #ifdef DBG_PROC
   if(DBG_PROC==myproc) printf("UpdateScalars for turb q return\n");
 #endif
@@ -177,8 +178,9 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
 #ifdef DBG_PROC
   if(DBG_PROC==myproc) printf("UpdateScalars for turb l\n");
 #endif
+  // RH: for turbulence turn off horizontal advection (trailing 0 argument)
   UpdateScalars(grid,phys,prop,wnew,l,phys->boundary_tmp,phys->Cn_l,0,0,kappaT,thetaQ,phys->uold,phys->wtmp,
-		phys->htmp,phys->hold,1,1,comm,myproc,0,prop->TVDturb);
+                phys->htmp,phys->hold,1,1,comm,myproc,0,prop->TVDturb,HOR_ADV_TURBULENCE);
 #ifdef DBG_PROC
   if(DBG_PROC==myproc) printf("UpdateScalars for turb l return\n");
 #endif

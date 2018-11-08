@@ -908,7 +908,7 @@ void ComputeSediments(gridT *grid, physT *phys, propT *prop, int myproc, int num
     
     CalculateSediDiffusivity(grid,phys,k,myproc);
     
-    UpdateScalars(grid,phys,prop,sediments->Wnewsedi,sediments->SediC[k],sediments->boundary_sediC[k],phys->Cn_T,0,0,sediments->SediKappa_tv,prop->theta,phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,0,prop->TVDtemp);
+    UpdateScalars(grid,phys,prop,sediments->Wnewsedi,sediments->SediC[k],sediments->boundary_sediC[k],phys->Cn_T,0,0,sediments->SediKappa_tv,prop->theta,phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,0,prop->TVDtemp,1);
     SedimentVerticalVelocity(grid,phys,k,-1,myproc);
     ISendRecvCellData3D(sediments->SediC[k],grid,myproc,comm);
   }          
