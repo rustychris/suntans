@@ -999,6 +999,9 @@ static void CreateNormalArray(int *grad, int *face, int *normal, int *nfaces, in
     for(nf=0;nf<nfaces[n];nf++) {
       // for each face arbitrarily set normal to -1 if the first grad 
       // is the same cell as the current cell, otherwise 1
+      if ( face[maxfaces*n+nf]<0 ) {
+        printf("cell n=%d nf=%d face=%d\n",n,nf,face[maxfaces*n+nf]);
+      }
       assert(face[maxfaces*n+nf]>=0); // not sure why this is happening.
 
       if(n==grad[2*face[maxfaces*n+nf]])

@@ -245,3 +245,48 @@ static void StabilityFunctions(REAL *Sm, REAL *Sh, REAL Gh, REAL A1, REAL A2, RE
   *Sh = A2*(1-6*A1/B1)/(1-3*A2*Gh*(6*A1+B2));
 }
 
+
+void parabolic_viscosity(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l, REAL **Cn_q, REAL **Cn_l, 
+                         REAL **nuT, REAL **kappaT, MPI_Comm comm, int myproc) {
+  int i,k,nf;
+  REAL usum,vsum,dzsum,ustar,z,z0B;
+  // q and l are cell-centered, Nk-layer fields that we can use however we like.
+  // have to output to nuT, kappaT, also cell-centered, Nk-layer arrays
+
+  // Use q[i][0] to hold depth averaged velocity
+
+  for(i=0;i<grid->Nc;i++) {
+    dzsum=usum=vsum=0.0;
+    for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+      // because of where this is called, this is actually a sort of old velocity.
+      usum += phys->uc[i][k]*grid->dzz[i][k];
+      vsum += phys->vc[i][k]*grid->dzz[i][k];
+      dzsum+= grid->dzz[i][k];
+    }
+    if(dzsum<0.001) dzsum=0.001; // dry or super thin water columns
+    usum=usum/dzsum;
+    vsum=vsum/dzsum;
+    q[i][0]=sqrt(usum*usum+vsum*vsum);
+
+    // need to get from depth averaged flow to bed stress friction velocity.
+    // ideally use the z0 we already have, but without relying on modeled
+    // velocity profile near the bed.
+    // based on Liu 2001, U=(u*/k) ln(h/zo*e)
+    z0B=0.0;
+    for(nf=0;nf<grid->nfaces[i];nf++) {
+      z0B+=phys->z0B_spec[ grid->face[i*grid->maxfaces+nf] ];
+    }
+    z0B/=grid->nfaces[i];
+
+    ustar=q[i][0]*KAPPA_VK / (log(dzsum/z0B)-1.);
+
+    // And assign viscosity
+    z=dzsum; // starts at surface
+    for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+      z-=0.5*grid->dzz[i][k]; // at cell center
+      nuT[i][k]=KAPPA_VK * ustar * dzsum * (z/dzsum) * (1.-z/dzsum);
+      kappaT[i][k]=nuT[i][k];
+      z-=0.5*grid->dzz[i][k]; 
+    }
+  }
+}

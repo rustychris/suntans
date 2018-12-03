@@ -544,8 +544,15 @@ static void ReadEdgesData(char *filename, gridT *grid, int myproc) {
     for(j=0;j<NUMEDGECOLUMNS-1;j++) 
       grid->edges[NUMEDGECOLUMNS*n+j]=(int)getfield(ifile,str);
     grid->mark[n]=(int)getfield(ifile,str);
-    for(j=0;j<2;j++) 
+    for(j=0;j<2;j++)
       grid->grad[2*n+j]=(int)getfield(ifile,str);
+    if ( grid->mark[n]<6 && grid->grad[2*n] < 0) {
+      // RH: This may be too restrictive.  Marker 6 should be ignored, but 0-2
+      // are definitely included.  what about 3 through 5?
+      printf("[p=%d] Error: grid->grad[edge=%d side=%d]=%d mark=%d.  Expected >=0\n",myproc,n,0,
+             grid->grad[2*n],grid->mark[n]);
+      exit(EXIT_FAILURE);
+    }
     if(numColumns>COLUMNS_IN_TRIANGLE_EDGES_FILE) {
       grid->edge_id[n]=(int)getfield(ifile,str);
     } else {
@@ -707,6 +714,13 @@ static void ReadEdgeCenteredData(char *filename, gridT *grid, int myproc) {
       grid->edges[NUMEDGECOLUMNS*n+1] = (int)getfield(ifile,str);
       grid->edge_id[n] = (int)getfield(ifile,str);//MR
       grid->eptr[n] = (int)getfield(ifile,str);//MR
+
+      if (grid->mark[n]<6 && grid->grad[2*n] < 0) {
+        // same test as at line 549 -- keep sync'd or refactor.
+        printf("[p=%d] Error: grid->grad[edge=%d side=%d]=%d mark=%d.  Expected >=0\n",myproc,n,0,
+               grid->grad[2*n],grid->mark[n]);
+        exit(EXIT_FAILURE);
+      }
   }
   fclose(ifile);
 }
