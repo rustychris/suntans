@@ -116,8 +116,10 @@ void nc_read_3D(int ncid, char *vname, size_t start[3], size_t count[3], REAL **
     //    if ((retval = nc_get_vara_double(ncid, varid, start, count, &tmparray[0][0][0])))
     //	ERR(retval);
     if ((retval = nc_get_vara_double(ncid, varid, start, count, &outdata[0][0][0])))  {
-      printf("start: %d %d %d\n",start[0],start[1],start[2]);
-      printf("count: %d %d %d\n",count[0],count[1],count[2]);
+      // RH: gcc complains that size_t is effectively long unsigned, and %d
+      // is for int.
+      printf("start: %ld %ld %ld\n",start[0],start[1],start[2]);
+      printf("count: %ld %ld %ld\n",count[0],count[1],count[2]);
       printf("varname: %s\n",vname);
       ERRM(retval,"nc_get_vara_double");
     }
@@ -5227,6 +5229,19 @@ void ReturnZ0BNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nei, int
       printf("No roughness in netcdf file.  Will use %.3e from suntans.dat...\n",prop->z0B);
     return;
   }
+
+  // most of IC has a time dimension with a single entry.
+  // make sure that is true here to avoid ugly bug.
+  if ((retval=nc_inq_varndims(ncid, varid,&ind)))
+    ERR(retval); 
+
+  if(ind!=2) {
+    printf("While reading roughness from netcdf variable 'z0B'...\n");
+    printf("Expected dimensions (time,edge), but got %d dimensions\n",
+           ind);
+    exit(1);
+  }
+
   if(VERBOSE>1 && myproc==0) 
     printf("Reading roughness from netcdf variable 'z0B'...\n");
 

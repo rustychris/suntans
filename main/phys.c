@@ -1765,6 +1765,20 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
   k0, kmin, kmax;
   REAL *a, *b, *c, fab1, fab2, fab3, sum, def1, def2, dgf, Cz, tempu; //AB3
 
+  // RH: remove soon, but keep for the moment.  writes advective term
+  // out to disk
+#undef DBG_HSOURCE
+#ifdef DBG_HSOURCE
+  char str[BUFFERLENGTH];
+  FILE *fp_stmp=NULL;
+
+  if(!(prop->n%prop->ntout) || prop->n==1+prop->nstart ) {
+    sprintf(str,"%s/stmp.dat.%d",DATADIR,myproc);
+    printf("logging stmp to %s\n",str);
+    fp_stmp=MPI_FOpen(str,"a","HorizontalSource",myproc);
+  }
+#endif
+
   a = phys->a;
   b = phys->b;
   c = phys->c;
@@ -2093,7 +2107,7 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     /* Vertical advection of momentum calc */
     // Only if thetaM<0, otherwise use implicit scheme in UPredictor()
 
-    if(prop->thetaM<0) {
+    if( (prop->thetaM<0) && (grid->Nkmax>1) ) {
 
       // Now do vertical advection of momentum
       for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
@@ -2161,7 +2175,6 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
         a[grid->Nk[i]]=0;
         b[grid->Nk[i]]=0;
 
-
         for(k=grid->ctop[i];k<grid->Nk[i];k++) {
           phys->stmp[i][k]+=(a[k]-a[k+1])/grid->dzz[i][k];
           phys->stmp2[i][k]+=(b[k]-b[k+1])/grid->dzz[i][k];
@@ -2171,6 +2184,27 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
         }
       }
     } // end of nonlinear computation
+
+#ifdef DBG_HSOURCE
+    // DEBUGGING
+    if(fp_stmp!=NULL) {
+      for(i=0;i<grid->Nc;i++){
+        for(k=0;k<grid->Nkmax;k++) {
+          if( (k<grid->ctop[i]) ||
+              (k>grid->Nk[i]) ) {
+            tempu=-999.0;
+            fwrite(&tempu,sizeof(tempu),1,fp_stmp);
+            fwrite(&tempu,sizeof(tempu),1,fp_stmp);
+          } else {
+            fwrite(&phys->stmp[i][k],sizeof(REAL),1,fp_stmp);
+            fwrite(&phys->stmp2[i][k],sizeof(REAL),1,fp_stmp);
+          }
+        }
+      }
+      fclose(fp_stmp);
+      fp_stmp=NULL;
+    }
+#endif
   }
 
   // stmp and stmp2 just store the summed C_H and C_V values for horizontal
@@ -3014,8 +3048,13 @@ static void CGSolveQ(REAL **q, REAL **src, REAL **c, gridT *grid, physT *phys, p
  */
 static void EddyViscosity(gridT *grid, physT *phys, propT *prop, REAL **wnew, MPI_Comm comm, int myproc)
 {
-  if(prop->turbmodel==1) 
+  switch(prop->turbmodel) {
+  case 1:
     my25(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
+    break;
+  case 10:
+    parabolic_viscosity(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
+  }
 }
 
 /*
