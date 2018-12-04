@@ -278,7 +278,13 @@ void parabolic_viscosity(gridT *grid, physT *phys, propT *prop, REAL **wnew, REA
     }
     z0B/=grid->nfaces[i];
 
-    ustar=q[i][0]*KAPPA_VK / (log(dzsum/z0B)-1.);
+    // This is poorly behaved when z0 is huge.
+    // avoid things getting crazy in that case, though most likely
+    // this means that a different drag formulation would be appropriate
+    z=log(dzsum/z0B)-1.;
+    if(z<0.1) z=0.1;
+
+    ustar=q[i][0]*KAPPA_VK / z;
 
     // And assign viscosity
     z=dzsum; // starts at surface

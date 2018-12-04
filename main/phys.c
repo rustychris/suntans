@@ -672,6 +672,7 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   // Initialise the heat flux arrays
   for(i=0;i<Nc;i++) {
     ktop = grid->ctop[i];
+    if ( ktop==grid->Nk[i] ) ktop--;
     phys->Tsurf[i] = phys->T[i][ktop];
     phys->dT[i] = 0.001; // Needs to be != 0
     
@@ -2166,14 +2167,17 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
 
         // RH: these are questionable -- is there really a flux into the top layer
         // from above??
-        a[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->uc[i][grid->ctop[i]];
-        b[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->vc[i][grid->ctop[i]];
-        // RH -- I don't think that should be there...
-        a[grid->ctop[i]]=0;
-        b[grid->ctop[i]]=0;
-
-        a[grid->Nk[i]]=0;
-        b[grid->Nk[i]]=0;
+        // Also - why is this now getting an error about bounds?
+        if(grid->ctop[i]<grid->Nk[i]) {
+          a[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->uc[i][grid->ctop[i]];
+          b[grid->ctop[i]]=phys->w[i][grid->ctop[i]]*phys->vc[i][grid->ctop[i]];
+          // RH -- I don't think that should be there...
+          a[grid->ctop[i]]=0;
+          b[grid->ctop[i]]=0;
+  
+          a[grid->Nk[i]]=0;
+          b[grid->Nk[i]]=0;
+        }
 
         for(k=grid->ctop[i];k<grid->Nk[i];k++) {
           phys->stmp[i][k]+=(a[k]-a[k+1])/grid->dzz[i][k];
@@ -3162,14 +3166,18 @@ static void UPredictor(gridT *grid, physT *phys,
     if(nc2==-1)
       nc2=nc1;
 
+    if( grid->etop[j]==grid->Nke[j] )
+      continue; // Edge is dry.
+    // Edge is wet
+    
     // Add the wind shear stress from the top cell
     phys->utmp[j][grid->etop[j]]+=2.0*dt*phys->tau_T[j]/
       (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]]);
-
+    
     // Create the tridiagonal entries and formulate U***
     // provided that we don't have a zero-depth top cell
     if(!(grid->dzz[nc1][grid->etop[j]]==0 && grid->dzz[nc2][grid->etop[j]]==0)) {
-
+      
       // initialize coefficients
       for(k=grid->etop[j];k<grid->Nke[j];k++) {
         a[k]=0;
@@ -3177,15 +3185,15 @@ static void UPredictor(gridT *grid, physT *phys,
         c[k]=0;
         d[k]=0;
       }
-
+      
       // Vertical eddy-viscosity interpolated to faces since it is stored
       // at cell-centers.
       for(k=grid->etop[j]+1;k<grid->Nke[j];k++) 
         c[k]=0.25*(phys->nu_tv[nc1][k-1]+phys->nu_tv[nc2][k-1]+
-            phys->nu_tv[nc1][k]+phys->nu_tv[nc2][k]+
-            prop->laxWendroff_Vertical*(phys->nu_lax[nc1][k-1]+phys->nu_lax[nc2][k-1]+
-              phys->nu_lax[nc1][k]+phys->nu_lax[nc2][k]));
-
+                   phys->nu_tv[nc1][k]+phys->nu_tv[nc2][k]+
+                   prop->laxWendroff_Vertical*(phys->nu_lax[nc1][k-1]+phys->nu_lax[nc2][k-1]+
+                                               phys->nu_lax[nc1][k]+phys->nu_lax[nc2][k]));
+      
 #if defined(DBG_PROC) && defined(DBG_EDGE)
       if(myproc==DBG_PROC && j==DBG_EDGE) {
         printf("[p=%d j=%d] interpolated eddy viscosity\n",myproc,j);
@@ -3194,21 +3202,21 @@ static void UPredictor(gridT *grid, physT *phys,
         }
       }
 #endif
-
-
+      
+      
       // Coefficients for the viscous terms.  Face heights are taken as
       // the average of the face heights on either side of the face (not upwinded).
       for(k=grid->etop[j]+1;k<grid->Nke[j];k++) 
         a[k]=2.0*(prop->nu+c[k])/(0.25*(grid->dzz[nc1][k]+grid->dzz[nc2][k])*
-            (grid->dzz[nc1][k-1]+grid->dzz[nc2][k-1]+
-             grid->dzz[nc1][k]+grid->dzz[nc2][k]));
-
+                                  (grid->dzz[nc1][k-1]+grid->dzz[nc2][k-1]+
+                                   grid->dzz[nc1][k]+grid->dzz[nc2][k]));
+      
       for(k=grid->etop[j];k<grid->Nke[j]-1;k++) {
         b[k]=2.0*(prop->nu+c[k+1])/(0.25*(grid->dzz[nc1][k]+grid->dzz[nc2][k])*
-            (grid->dzz[nc1][k]+grid->dzz[nc2][k]+
-             grid->dzz[nc1][k+1]+grid->dzz[nc2][k+1]));
+                                    (grid->dzz[nc1][k]+grid->dzz[nc2][k]+
+                                     grid->dzz[nc1][k+1]+grid->dzz[nc2][k+1]));
       }
-
+      
       // Coefficients for vertical momentum advection terms
       // d[] stores vertical velocity interpolated to faces vertically half-way between U locations
       // So d[k] contains w defined at the vertical w-location of cell k
@@ -3606,7 +3614,7 @@ static void UPredictor(gridT *grid, physT *phys,
       }
 #endif
 
-    }
+    } 
   }
   theta=theta0;
 
@@ -4718,19 +4726,22 @@ static void ComputeUCPerot(REAL **u, REAL **uc, REAL **vc, gridT *grid) {
 
     //top cell only - don't account for depth
     k=grid->ctop[n];
-    // over each face
-    for(nf=0;nf<grid->nfaces[n];nf++) {
-      ne = grid->face[n*grid->maxfaces+nf];
-      if(!(grid->smoothbot) || k<grid->Nke[ne]){
-        uc[n][k]+=u[ne][k]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
-        vc[n][k]+=u[ne][k]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
-      } else {
-        uc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
-        vc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];        
+
+    if ( k<grid->Nk[n] ) { // RH - not sure why this is causing issues now...
+      // over each face
+      for(nf=0;nf<grid->nfaces[n];nf++) {
+        ne = grid->face[n*grid->maxfaces+nf];
+        if(!(grid->smoothbot) || k<grid->Nke[ne]){
+          uc[n][k]+=u[ne][k]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
+          vc[n][k]+=u[ne][k]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
+        } else {
+          uc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
+          vc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];        
+        }
       }
+      uc[n][k]/=grid->Ac[n];
+      vc[n][k]/=grid->Ac[n];
     }
-    uc[n][k]/=grid->Ac[n];
-    vc[n][k]/=grid->Ac[n];
   }
 }
 static void ComputeUCLSQ(REAL **u, REAL **uc, REAL **vc, gridT *grid, physT *phys){
