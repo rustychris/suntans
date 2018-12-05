@@ -21,6 +21,8 @@ void ISendRecvCellData2D(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm)
 void ISendRecvCellData3D(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm);
 void ISendRecvWData(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm);
 void ISendRecvEdgeData3D(REAL **edgedata, gridT *grid, int myproc, MPI_Comm comm);
+void ISendRecvEdgeData2D(REAL *edgedata, gridT *grid, int myproc, MPI_Comm comm);
+
 void CheckCommunicateCells(gridT *maingrid, gridT *localgrid, int myproc, MPI_Comm comm);
 void CheckCommunicateEdges(gridT *maingrid, gridT *localgrid, int myproc, MPI_Comm comm);
 

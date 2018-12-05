@@ -396,6 +396,8 @@ void InitMainGrid(gridT **grid, int Np, int Ne, int Nc, int myproc)
 
   // Depth at Voronoi points
   (*grid)->dv = (REAL *)SunMalloc((*grid)->Nc*sizeof(REAL),"InitMainGrid");
+  // Depth at edges allocated later, in InitializeEdgeDepth
+  
   // Weights for partitioning cell graph
   (*grid)->vwgt = (int *)SunMalloc((*grid)->Nc*sizeof(int),"InitMainGrid");
 
@@ -449,7 +451,7 @@ void GetDepth(gridT *grid, int myproc, int numprocs, MPI_Comm comm)
   if(IntDepth==1) 
     // interpolate the depth if desired 
     InterpDepth(grid,myproc,numprocs,comm);
-  else if(IntDepth==2) 
+  else if(IntDepth==2)
     // already have cell center values so just read these
     ReadDepth(grid,myproc);
   else {
@@ -472,6 +474,7 @@ void GetDepth(gridT *grid, int myproc, int numprocs, MPI_Comm comm)
       maxdepth = grid->dv[n];
   maxdepth0 = maxdepth;
 
+  
   GetDZ(dz,maxdepth,maxdepth,Nkmax,myproc);
 
   //  if(!stairstep && fixdzz)
@@ -500,6 +503,7 @@ void GetDepth(gridT *grid, int myproc, int numprocs, MPI_Comm comm)
     }
   }
 
+  // edge depths from ReadEdgeDepth are guaranteed shallower than cells
   for(n=0;n<grid->Nc;n++) {
     if(grid->dv[n]>maxdepth)
       maxdepth = grid->dv[n];
@@ -1355,6 +1359,7 @@ static void FreeGrid(gridT *grid, int numprocs)
   SunFree(grid->xv,grid->Nc*sizeof(REAL),"FreeGrid");
   SunFree(grid->yv,grid->Nc*sizeof(REAL),"FreeGrid");
   SunFree(grid->dv,grid->Nc*sizeof(REAL),"FreeGrid");
+  SunFree(grid->de,grid->Ne*sizeof(REAL),"FreeGrid");
   SunFree(grid->vwgt,grid->Nc*sizeof(REAL),"FreeGrid");
 
   // These are allocated in phys.c:InitializeVerticalGrid

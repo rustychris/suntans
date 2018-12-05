@@ -10,7 +10,9 @@
  *
  */
 #include "gridio.h"
+#include "util.h"
 #include "memory.h"
+#include "sendrecv.h"
 
 // Private Variables
 #define COLUMNS_IN_TRIANGLE_CELLS_FILE 8  // Number of columns in original cells.dat before hybrid version of code
@@ -176,6 +178,71 @@ void ReadGrid(gridT **grid, int myproc, int numprocs, MPI_Comm comm)
   for(n=0;n<(*grid)->Ne;n++) 
     (*grid)->etop[n]=0;
 }
+
+// RH InitializeEdgeDepths
+// populate grid->de[].  This must be done after ReadGrid and AllocateTransferArrays,
+// since edge depths may be chosen from cell depths, and for marker 6 edges that
+// requires some interprocessor communication.
+void InitializeEdgeDepths(gridT *grid,int myproc,MPI_Comm comm) {
+  int n,nc1,nc2;
+  char str[BUFFERLENGTH];
+  FILE *ifile;
+  REAL temp;
+
+  grid->de = (REAL*)SunMalloc(grid->Ne*sizeof(REAL),"InitializeEdgeDepths");
+
+  // If the file exists, read it.  No setting in suntans.dat
+  sprintf(str,"%s-edge",INPUTDEPTHFILE);
+
+  if(VERBOSE>0) printf("Trying to read edge depths from %s...\n",str);
+
+  ifile = fopen(str,"r");
+  if( ifile!=NULL ) {
+    if(VERBOSE>0) printf("Reading...\n");
+
+    // this is only going to work for global edge indices
+    for(n=0;n<grid->Ne;n++) {
+      temp=getfield(ifile,str); // X
+      temp=getfield(ifile,str); // Y
+      grid->de[n] = getfield(ifile,str);
+    }
+  } else {
+    if(VERBOSE>0) printf("%s did not exist, will pull from cells...\n",str);
+
+    // Take edge depth to be the shallower of the neighboring cells.
+    // Note that these will not be consistent with Sum_k dzf until after a call to UpdateDZ
+    // and remember that dv and de are both positive - they are soundings, not elevations.
+    // Also, marker 6 edges will get the wrong answer here - we have to pull them from 
+    // the neighboring processor afterwards.
+    for(n=0;n<grid->Ne;n++) {
+      nc1 = grid->grad[2*n];
+      nc2 = grid->grad[2*n+1];
+      if ( nc1<0 ) nc1=nc2; 
+      if ( nc2<0 ) nc2=nc1;
+
+      if ( grid->dv[nc1] > grid->dv[nc2] ) 
+        nc1 = nc2;
+      // now nc1 refers to the shallower watercolumn.
+
+      grid->de[n] = grid->dv[nc1];
+
+      // in this case, we should make sure that Nke is consistent with Nk -
+      // some of the grid postprocessing for edge-based depths updates Nke and Nkc, but
+      // if we're missing edgedepths then Nke will be inconsistent with the depth taken
+      // from the neighboring cell
+      if( (grid->Nke[n] != grid->Nk[nc1]) && (grid->mark[n]!=6 ) ) {
+        printf("[p=%d] Nke[j=%d]=%d inconsistent with cell neighbor Nk[i=%d]=%d\n",
+               myproc,
+               n,grid->Nke[n],nc1,grid->Nk[nc1]);
+        MPI_Finalize();
+        exit(1);
+      }
+    }
+    // get depths for marker 6 edges from other processor:
+    ISendRecvEdgeData2D(grid->de, grid, myproc, comm);
+  }
+}
+
 
 /*
  * Function: ReadGridFileNames

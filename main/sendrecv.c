@@ -164,6 +164,46 @@ void ISendRecvCellData2D(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm)
 }
 
 /*
+ * Function: ISendEdgeCellData2D
+ * Usage: ISendRecvEdgeData2D(grid->h,grid,myproc,comm);
+ * -----------------------------------------------------
+ * This function will transfer the edge data back and forth between
+ * processors.  
+ *
+ * This is the non-blocking version of SendRecvCellData2D.
+ *
+ * added by Yi-Ju Chou for wave modeling. 5/1/2010
+ */
+void ISendRecvEdgeData2D(REAL *edgedata, gridT *grid, int myproc, 
+			 MPI_Comm comm)
+{
+  int n, neigh, neighproc;
+
+  for(neigh=0;neigh<grid->Nneighs;neigh++) {
+    neighproc = grid->myneighs[neigh];
+
+    for(n=0;n<grid->num_edges_send[neigh];n++)
+      grid->send[neigh][n]=edgedata[grid->edge_send[neigh][n]];
+
+    MPI_Isend((void *)(grid->send[neigh]),grid->num_edges_send[neigh],
+	     MPI_DOUBLE,neighproc,1,comm,&(grid->request[neigh])); 
+  }
+
+  for(neigh=0;neigh<grid->Nneighs;neigh++) {
+    neighproc = grid->myneighs[neigh];
+    MPI_Irecv((void *)(grid->recv[neigh]),grid->num_edges_recv[neigh],
+	     MPI_DOUBLE,neighproc,1,comm,&(grid->request[grid->Nneighs+neigh]));
+  }
+  MPI_Waitall(2*grid->Nneighs,grid->request,grid->status);
+
+  for(neigh=0;neigh<grid->Nneighs;neigh++) {
+    for(n=0;n<grid->num_edges_recv[neigh];n++)
+     edgedata[grid->edge_recv[neigh][n]]=grid->recv[neigh][n];
+  }
+}
+
+
+/*
  * Function: ISendRecvCellData3D
  * Usage: ISendRecvCellData3D(grid->s,grid,myproc,comm);
  * ----------------------------------------------------

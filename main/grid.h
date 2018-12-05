@@ -30,17 +30,18 @@
  *
  */
 typedef struct _gridT {
-  REAL *xp;
-  REAL *yp;
-  REAL *xv;
-  REAL *yv;
-  REAL *xe;
-  REAL *ye;
-  REAL *dv;
-  REAL *dz;
-  REAL **dzz;
-  REAL **dzf;
-  REAL *dzfB;
+  REAL *xp;   // x-coordinate of vertices
+  REAL *yp;   // y-coordinate of vertices
+  REAL *xv;   // x-coordinate cell center
+  REAL *yv;   // y-coordinate cell center
+  REAL *xe;   // x-coordiante edge midpoint
+  REAL *ye;   // y-coordinate edge midpoint
+  REAL *dv;   // depth at cell center
+  REAL *de;   // depth at edges (RH)
+  REAL *dz;   // unclipped layer heights
+  REAL **dzz; // height of cell per layer
+  REAL **dzf; // height of edge per layer
+  REAL *dzfB; // height of edge in bottom layer
   REAL **dzzold;
   REAL **dzfold;
   REAL *dztop;
