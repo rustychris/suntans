@@ -20,9 +20,7 @@ n1=g.select_nodes_nearest([300,0])
 n2=g.select_nodes_nearest([300,500])
 
 edges=g.shortest_path( n1,n2, return_type='edges' )
-# sloping weir, initially totally dry, will overtop
-# during run
-g.edges['edge_depth'][edges]= np.linspace(-1,-3.75,len(edges))
+g.edges['edge_depth'][edges]=-1
 
 
 model=sun_driver.SuntansModel()
@@ -35,24 +33,19 @@ model.add_bcs(inflow)
 
 model.set_run_dir('rundata', mode='pristine')
 model.run_start=np.datetime64("2018-01-01 00:00")
-model.run_stop =np.datetime64("2018-01-02 00:00")
+model.run_stop =np.datetime64("2018-01-01 06:00")
 model.projection='EPSG:26910'
 
-model.config['dt']=30
-model.config['Cmax']=30
-
-model.sun_bin_dir="/home/rusty/src/suntans/main"
-model.config['Nkmax']=1
+model.config['Nkmax']=50
 model.config['stairstep']=0
-
 model.write()
 
 model.ic_ds.eta.values[:]=-4
 model.write_ic_ds()
 
+model.sun_bin_dir="/home/rusty/src/suntans/main"
+
 model.partition()
 model.run_simulation()
 
 
-# j=2866 seems to be getting significant velocity even though it should be dry.
-# c=1394 is the upstream cell

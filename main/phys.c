@@ -105,8 +105,7 @@ static REAL UFaceFlux(int j, int k, REAL **phi, REAL **u, gridT *grid, REAL dt,
     int method);
 static REAL HFaceFlux(int j, int k, REAL *phi, REAL **u, gridT *grid, REAL dt, 
     int method);
-//static void SetFluxHeight(gridT *grid, physT *phys, propT *prop);
-void SetFluxHeight(gridT *grid, physT *phys, propT *prop);
+void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option);
 static void GetMomentumFaceValues(REAL **uface, REAL **ui, REAL **boundary_ui, REAL **U, gridT *grid, physT *phys, propT *prop, MPI_Comm comm, int myproc, int nonlinear);
 static void getTsurf(gridT *grid, physT *phys);
 static void getchangeT(gridT *grid, physT *phys);
@@ -533,7 +532,6 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   REAL *ncscratch;
   int Nci, Nei, Nki, T0;
 
-
   prop->nstart=0;
   
   // Initialise the netcdf time
@@ -551,27 +549,17 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
     ncscratch = (REAL *)SunMalloc( max(Nei,Nki*Nci)*sizeof(REAL),"InitializePhysicalVariables");
 
   }
-  // Need to update the vertical grid and fix any cells in which
-  // dzz is too small when h=0.
-  UpdateDZ(grid,phys,prop, -1,myproc);
- 
-/*  for(i=0;i<Nc;i++) {
-    grid->dv[i]=0;
-    for(k=0;k<grid->Nk[i];k++)
-      grid->dv[i]+=grid->dzz[i][k];
-  }
-
-  REAL mindepth=INFTY;
-  for(i=0;i<Nc;i++)
-    if(grid->dv[i]<mindepth)
-      mindepth=grid->dv[i];
-  printf("MINDEPTH=%f\n",mindepth);
-  */
 
   // Initialize the free surface
   for(i=0;i<Nc;i++) {
     phys->h[i]=0;
   }
+
+  // RH: why are there two calls to UpdateDZ with option set?
+  // why not just deal with the freesurface setting, then call it once
+  // with option set.
+  // UpdateDZ(grid,phys,prop, -1,myproc);
+
   if (prop->readinitialnc){
      ReturnFreeSurfaceNC(prop,phys,grid,ncscratch,Nci,T0,myproc);
   }else{
@@ -749,6 +737,8 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
  *
  */
 void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
+  int nc1,nc2;
+  REAL h;
   int i, j;
 
   if(prop->z0T==0) 
@@ -768,11 +758,22 @@ void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
     }
   }
 
-  for(j=0;j<grid->Ne;j++)
-    if(grid->dzf[j][grid->Nke[j]-1]<BUFFERHEIGHT && grid->etop[j]==grid->Nke[j]-1){
+  // for now, no special handling with edge-based depths.
+  for(j=0;j<grid->Ne;j++) {
+    nc1=grid->grad[2*j];
+    nc2=grid->grad[2*j+1];
+    if(nc2<0) nc2=nc1;
+    if(nc1<0) nc1=nc2;
+    // a lower bound on freesurface height, to determine
+    // when a high CdB is needed
+    // This is a very bad approximation to having a proper
+    // weir equation.
+    h=Min(phys->h[nc1],phys->h[nc2]) + grid->de[j];
+    
+    if(h<BUFFERHEIGHT) {
       phys->CdB[j]=100;
-      //printf("Making CdB a large value due to small cell!\n");
     }
+  }
 }
 
 /*
@@ -844,196 +845,6 @@ void InitializeVerticalGrid(gridT **grid,int myproc)
  * RH: replaced this with UpdateDZ from old wetting/drying branch which had
  * been more extensively tested in SF Bay 
  */
-#if 0  // RH_UpdateDZ
-void UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
-{
-  int i, j, k, ne1, ne2, Nc=grid->Nc, Ne=grid->Ne, flag, nc1, nc2;
-  REAL z, dzz1, dzz2;
-
-  // don't need to recompute for linearized FS
-  if(prop->linearFS) {
-    return;
-  }
-
-  // If this is not an initial call then set dzzold to store the old value of dzz
-  // and also set the etopold and ctopold pointers to store the top indices of
-  // the grid.
-  if(!option) {
-    for(j=0;j<Ne;j++)
-      grid->etopold[j]=grid->etop[j];
-    for(i=0;i<Nc;i++) {
-      grid->ctopold[i]=grid->ctop[i];
-      for(k=0;k<grid->ctop[i];k++)
-        grid->dzzold[i][k]=0;
-      for(k=grid->ctop[i];k<grid->Nk[i];k++)
-        grid->dzzold[i][k]=grid->dzz[i][k];
-    }
-  }
-  //fixdzz
-  if(option==-1)
-    for(i=0;i<Nc;i++)
-      phys->h[i]=.0;
-
-  // First set the thickness of the bottom grid layer.  If this is a partial-step
-  // grid then the dzz will vary over the horizontal at the bottom layer.  Otherwise,
-  // the dzz at the bottom will be equal to dz at the bottom.
-  for(i=0;i<Nc;i++) {
-    z = 0;
-    for(k=0;k<grid->Nk[i];k++)
-      z-=grid->dz[k];
-    grid->dzz[i][grid->Nk[i]-1]=grid->dz[grid->Nk[i]-1]+grid->dv[i]+z;
-  }
-
-  // Loop through and set the vertical grid thickness when the free surface cuts through 
-  // a particular cell.
-  if(grid->Nkmax>1) {
-    for(i=0;i<Nc;i++) {
-      z = 0;
-      flag = 0;
-
-      for(k=0;k<grid->Nk[i];k++) {
-        z-=grid->dz[k];
-        if(phys->h[i]>=z) 
-          if(!flag) {
-            if(k==grid->Nk[i]-1) {
-              grid->dzz[i][k]=phys->h[i]+grid->dv[i];
-              grid->ctop[i]=k;
-            } else if(phys->h[i]==z) {
-              grid->dzz[i][k]=0;
-              grid->ctop[i]=k+1;
-            } else {
-              grid->dzz[i][k]=phys->h[i]-z;
-              grid->ctop[i]=k;
-            }
-            flag=1;
-          } else {
-            if(k==grid->Nk[i]-1) 
-              grid->dzz[i][k]=grid->dz[k]+grid->dv[i]+z;
-            else 
-              if(z<-grid->dv[i])
-                grid->dzz[i][k]=0;
-              else 
-                grid->dzz[i][k]=grid->dz[k];
-          } 
-        else 
-          grid->dzz[i][k]=0;
-      }
-    }
-  } else {
-    // Single Layer
-
-    // original code from github -- doesn't allow the layer to dry out.
-    // for(i=0;i<Nc;i++)
-    //   grid->dzz[i][0]=grid->dv[i]+phys->h[i];
-
-    // Copied from RH old branch of suntans
-    for(i=0;i<Nc;i++) {
-
-      grid->dzz[i][0] = grid->dv[i]+phys->h[i];
-      grid->ctop[i] = 0;
-
-      if( grid->dzz[i][0] < DRYCELLHEIGHT ) {
-        // dry
-        // RH code propped up dzz here, but that is now done elsewhere, so
-        grid->ctop[i] = 1;          // ctop is 1 - deactivate cell.
-      }
-    }
-  }
-
-  /*
-  for(i=0;i<Nc;i++)
-    for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-      if(grid->dzz[i][k]<=grid->dz[k]/50)
-	grid->dzz[i][k]=grid->dz[k]/50;
-    }
-  */
-
-  // Now set grid->etop and ctop which store the index of the top cell  
-  for(j=0;j<grid->Ne;j++) {
-    ne1 = grid->grad[2*j];
-    ne2 = grid->grad[2*j+1];
-
-#if 0
-    if(ne1 == -1)
-      grid->etop[j]=grid->ctop[ne2];
-    else if(ne2 == -1)
-      grid->etop[j]=grid->ctop[ne1];
-    else if(grid->ctop[ne1]<grid->ctop[ne2])
-      grid->etop[j]=grid->ctop[ne1];
-    else
-      grid->etop[j]=grid->ctop[ne2];
-#else
-    // RH trying older wet-dry code
-    // first, set ne1 to the cell that this edge's etop
-    // references
-    if(ne1 == -1)
-      ne1=ne2;
-    else if(ne2 == -1)
-      ; // ne1 already set to ne1
-    else if(phys->h[ne2] > phys->h[ne1] )
-      // both sides wet, use the higher freesurface
-      ne1=ne2;
-    else
-      ; // ne1 already set to ne1
-
-    // second, carefully copy its ctop
-    if( grid->ctop[ne1]==grid->Nk[ne1] ) {
-      // that cell is dry, so we are too
-      grid->etop[j] = grid->Nke[j];
-    } else {
-      // be careful of edges that are
-      // shallower than a neighboring cell
-      grid->etop[j] = Min(grid->ctop[ne1],grid->Nke[j]);
-    }
-#endif
-  }
-
-  // If this is an initial call set the old values to the new values and
-  // Determine the bottom-most flux-face height in the absence of h
-  // Check the smallest dzz and set to minimum  
-  if(option==-1) {
-    for(i=0;i<Nc;i++){
-      k=grid->Nk[i]-1;      
-      grid->dzbot[i]=grid->dzz[i][k];
-      //printf("cell %d dzsmall=%e dzz=%e\n",i,grid->dzsmall*grid->dz[k],grid->dzz[i][k]);
-      if(!grid->stairstep && grid->fixdzz )   
-        if(grid->dzz[i][k]<grid->dz[k]*grid->dzsmall) {
-          //printf("cell %d dzsmall=%e dzz=%e\n",i,grid->dzsmall*grid->dz[k],grid->dzz[i][k]);
-          grid->dv[i]+= (grid->dz[k]*grid->dzsmall-grid->dzz[i][k]);	
-          //grid->dzz[i][k]=grid->dz[k]*grid->dzsmall;
-        }
-    }
-  }
-
-  if(option==1) {    
-    for(j=0;j<Ne;j++) 
-      grid->etopold[j]=grid->etop[j];
-    for(i=0;i<Nc;i++) {
-      grid->ctopold[i]=grid->ctop[i];
-      for(k=0;k<grid->Nk[i];k++)
-        grid->dzzold[i][k]=grid->dzz[i][k];
-    }
-
-    for(j=0;j<Ne;j++) {
-      nc1 = grid->grad[2*j];
-      nc2 = grid->grad[2*j+1];
-      if(nc1==-1) nc1=nc2;
-      if(nc2==-1) nc2=nc1;
-
-      dzz1 = grid->dzz[nc1][grid->Nk[nc1]-1];
-      dzz2 = grid->dzz[nc2][grid->Nk[nc2]-1];
-      z=0;
-      for(k=0;k<grid->Nke[j]-1;k++)
-        z-=grid->dz[k];
-      if(phys->h[nc1]<z) 
-        dzz1 = dzz1-z+phys->h[nc1];
-      if(phys->h[nc2]<z) 
-        dzz2 = dzz2-z+phys->h[nc2];
-      grid->dzfB[j] = Min(dzz1,dzz2);
-    }
-  }
-}
-#else // RH_UpdateDZ
 void
 UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
 {
@@ -1164,7 +975,7 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
     }
   }
 
-  // Wanings
+  // Warnings
   for(i=0;i<Nc;i++) {
     if(grid->dv[i]+phys->h[i]<0) {
       printf("WARNING: negative depth %f, at cell i %d, layers Nk[i] %d, flag %d\n",
@@ -1172,60 +983,11 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
     }
   }
 
-  // Now set grid->etop and ctop which store the index of the top cell
-  // Also update flux face heights, dzf[j][k], and de = sum(dzf)
-  for(j=0;j<grid->Ne;j++) {
-    ne1 = grid->grad[2*j];
-    ne2 = grid->grad[2*j+1];
-    if(ne1 == -1 || ne2 == -1 ) {
-      if( ne1==-1 ) ne1=ne2; // set ne1 to be the wet cell
-      grid->etop[j]=grid->ctop[ne1];
-
-      for(k=0;k<grid->ctop[ne1] && k<grid->Nke[j];k++)
-        grid->dzf[j][k] = 0.0;
-
-      for(k=grid->ctop[ne1];k<grid->Nke[j];k++) 
-        grid->dzf[j][k] = grid->dzz[ne1][k];
-      // NB: dry,closed and flow bc edges still have dzf>0
-
-      if ( grid->etop[j] > grid->Nke[j] )
-        grid->etop[j] = grid->Nke[j];
-
-    } else {
-      // set ne1 to be the upwind cell, or if u==0, the cell with higher freesurface
-      // we're using a u that isn't quite "final" in UPredictor, but for most edges
-      // it is final (except non-hydrostatic) and only really different for the cases
-      // of edges that are drying out or becoming wet - in these cases I think it
-      // still works out...
-
-      // so we're using the new velocity phys->u, and even though we're about to 
-      // *set* etop, we can still use etop to get the top wet edge for this computational
-      // step - the one used so far - 
-      if (!option && grid->etop[j] < grid->Nke[j] && phys->u[j][grid->etop[j]]!=0.0 ) {
-        if( phys->u[j][grid->etop[j]] > 0 ) 
-          // ne2 is the upwind cell
-          ne1=ne2;
-        // otherwise ne1 already refers to the upwind cell.
-      } else {
-        // the edge is dry and/or has no velocity
-        if (phys->h[ne2] > phys->h[ne1] )
-          ne1 = ne2;
-      }
-
-      // top of the faces comes from higher cell, but be careful of edges that are
-      // shallower than neighboring cells
-      grid->etop[j] = Min(grid->ctop[ne1],grid->Nke[j]); 
-      // old code: Min(grid->ctop[ne1],grid->ctop[ne2]);
-
-      //DRY - from Bing, 2009-01-26
-      if( grid->ctop[ne1]==grid->Nk[ne1] ) {
-        grid->etop[j] = grid->Nke[j];
-      }
-
-      // FLUX FACE HEIGHTS -- set in SetFluxHeight
-    }
-  }
-
+  // grid->etop and dzf are set in SetFluxHeight
+  // RH: move this here so that dzz and dzf are kept consistent,
+  // including etopold, dzfold as copied below
+  SetFluxHeight(grid,phys,prop,option);
+  
   // If this is an initial call set the old values to the new values.
   if(option) {
     for(j=0;j<Ne;j++)  {
@@ -1254,9 +1016,7 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
              myproc,i,k, grid->dzz[i][k], grid->dzzold[i][k]);
   }
 #endif
-
 }
-#endif // RH UpdateDZ
 
 
 /*
@@ -1344,7 +1104,9 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
   // get the boundary scalars (boundaries.c)
   BoundaryScalars(grid,phys,prop,myproc,comm);
   // set the height of the face bewteen cells to compute the flux
-  SetFluxHeight(grid,phys,prop);
+  // RH: SetFluxHeight is now wrapped inside UpdateDZ to keep dzz and dzf
+  //     consistent
+  
   // set the drag coefficients for bottom friction
   SetDragCoefficients(grid,phys,prop);
   // for laxWendroff and central differencing- compute the numerical diffusion
@@ -1434,7 +1196,7 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       // begin the timer
       t0=Timer();
       // get the flux height (since free surface is changing) which is stored in dzf
-      SetFluxHeight(grid,phys,prop);
+      // SetFluxHeight is now wrapped in UpdateDZ to dzz, dzf consistent
       // laxWendroff central differencing
       if(prop->laxWendroff && prop->nonlinear==2) 
         LaxWendroff(grid,phys,prop,myproc,comm);
@@ -1602,15 +1364,7 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
         // Send q to the boundary cells now that it has been updated
         ISendRecvCellData3D(phys->q,grid,myproc,comm);
       } 
-      /* This code should not be here OBF
-      else if(!(prop->interp == PEROT)) {
-        // support quadratic interpolation work
-        // Send/recv the horizontal velocity data for use with more complex interpolation
-        ISendRecvEdgeData3D(phys->u,grid,myproc,comm);
-	}
-      */
       t_nonhydro+=Timer()-t0;
-
 
       // Send/recv the vertical velocity data 
       Continuity(phys->w,grid,phys,prop);
@@ -1685,36 +1439,7 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
 
     if(blowup)
       break;
-
-    //Close all open netcdf file
-    /* 
-    if(prop->n==prop->nsteps+prop->nstart) {
-      if(prop->outputNetcdf==1){
-	//printf("Closing output netcdf file on processor: %d\n",myproc);
-	if(myproc==0)
-	    MPI_NCClose(prop->outputNetcdfFileID);
-      }
-      if(prop->netcdfBdy==1){
-	//printf("Closing boundary netcdf file on processor: %d\n",myproc);
-      	MPI_NCClose(prop->netcdfBdyFileID);
-      }
-      if(prop->readinitialnc==1){
-	//printf("Closing initial netcdf file on processor: %d\n",myproc);
-      	MPI_NCClose(prop->initialNCfileID );
-      }
-      if(prop->metmodel>0){
-	//printf("Closing met netcdf file on processor: %d\n",myproc);
-      	MPI_NCClose(prop->metncid);
-      }
-    }
-    */
   }
-
-  // not sure if this is really necessary
-  //if(prop->mergeArrays) {
-  //  if(VERBOSE>2 && myproc==0) printf("Freeing merging arrays...\n");
-  //  FreeMergingArrays(grid,myproc);
-  //}
 }
 
 /*
@@ -1908,8 +1633,6 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
 
     if(grid->etop[j]<grid->Nke[j]-1) 
       for(k=grid->etop[j];k<grid->Nke[j];k++) {
-        // this next line seems completely unncessary and computationally wasteful
-        k0=grid->etop[j];
         // from the top of the water surface to the bottom edge layer for the given step
         for(k0=Max(grid->ctop[nc1],grid->ctop[nc2]);k0<k;k0++) {
           // for the Cn_U at the particular layer, integrate density gradient over the depth
@@ -1924,7 +1647,6 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
           (grid->dzz[nc1][k]+grid->dzz[nc2][k])/grid->dg[j];
       }
   }
-
 
 #if defined(DBG_PROC) && defined(DBG_EDGE)
   if(myproc==DBG_PROC) {
@@ -3590,7 +3312,6 @@ static void UPredictor(gridT *grid, physT *phys,
       }
 
 
-
       // Now vertically integrate E to create the vertically integrated flux-face
       // values that comprise the coefficients of the free-surface solver.  This
       // will create the D vector, where D=DZ^T E (which should be given by the
@@ -3709,10 +3430,28 @@ static void UPredictor(gridT *grid, physT *phys,
     nc1 = grid->grad[2*j];
     nc2 = grid->grad[2*j+1];
 
+    for(k=0;k<grid->etop[j];k++) {
+      // set dry edges levels to zero velocity
+      phys->u[j][k]=0.0;
+      
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+      if(myproc==DBG_PROC && j==DBG_EDGE) {
+        printf("[p=%d j=%d k=% 3d] layer is dry u=%.9f\n",
+               myproc,j,k,phys->u[j][k]);
+      }
+#endif      
+    }
+    // This had been include below, but should be redundant
+    // with proper SetFluxHeight usage.
+    
+    // if( grid->etop[j]==grid->Nke[j]-1 &&
+    //     grid->dzz[nc1][grid->etop[j]]==0 &&
+    //     grid->dzz[nc2][grid->etop[j]]==0 )
+    //   phys->u[j][grid->etop[j]]=0;
+      
     for(k=grid->etop[j];k<grid->Nke[j];k++) {
       phys->u[j][k]=phys->utmp[j][k]-prop->grav*theta*dt*E[j][k]*
         (phys->h[nc1]-phys->h[nc2])/grid->dg[j];
-
 
 #if defined(DBG_PROC) && defined(DBG_EDGE)
       if(myproc==DBG_PROC && j==DBG_EDGE) {
@@ -3725,12 +3464,6 @@ static void UPredictor(gridT *grid, physT *phys,
       }
 #endif
     }
-
-    // set dry cells (with zero height) to have zero velocity
-    if( grid->etop[j]==grid->Nke[j]-1 &&
-        grid->dzz[nc1][grid->etop[j]]==0 &&
-        grid->dzz[nc2][grid->etop[j]]==0 )
-      phys->u[j][grid->etop[j]]=0;
   }
 
 #if defined(DBG_PROC) && defined(DBG_EDGE)
@@ -3750,7 +3483,8 @@ static void UPredictor(gridT *grid, physT *phys,
 
 
   // Now update the vertical grid spacing with the new free surface.
-  // can comment this out to linearize the free surface 
+  // can comment this out to linearize the free surface
+  // this will update dzf, etop, saving previous values to dzfold, etopold
   UpdateDZ(grid,phys,prop, 0, myproc);
 
   // Use the new free surface to add the implicit part of the free-surface
@@ -3780,7 +3514,11 @@ static void UPredictor(gridT *grid, physT *phys,
   for(jptr=grid->edgedist[2];jptr<grid->edgedist[3];jptr++) {
     j = grid->edgep[jptr];
 
-    for(k=grid->etop[j];k<grid->Nke[j];k++) 
+    // RH: pro-active zeroing to maintain invariants
+    for(k=0;k<grid->etopold[j];k++)
+      phys->u[j][k] = 0.0;
+      
+    for(k=grid->etopold[j];k<grid->Nke[j];k++) 
       phys->u[j][k] = phys->utmp[j][k];
   }
 
@@ -3796,13 +3534,14 @@ static void UPredictor(gridT *grid, physT *phys,
     for(nf=0;nf<grid->nfaces[i];nf++) {
       ne = grid->face[i*grid->maxfaces+nf];
       if(grid->mark[ne]==3) {
-        for(k=grid->etop[ne];k<grid->Nke[ne];k++) {
+        for(k=grid->etopold[ne];k<grid->Nke[ne];k++) {
           phys->u[ne][k] = 0;
           // in at least one case where boundary cells with freesurface
           // BC had multiple edges on the boundary and had internal edges
           // between two FS BC cells, this led to instability.
           // it might be stable if made aware of multiple BC edges per face.
 #ifdef VELOCITY_ON_TYPE3_EDGES
+#error This code is incorrect if fs BC has multiple boundary edges
           sum=0;
           for(nf1=0;nf1<grid->nfaces[i];nf1++)
             sum+=phys->u[grid->face[i*grid->maxfaces+nf1]][k]*grid->df[grid->face[i*grid->maxfaces+nf1]]*grid->normal[i*grid->maxfaces+nf1];
@@ -3822,7 +3561,7 @@ static void UPredictor(gridT *grid, physT *phys,
                ||
                ( (grid->grad[2*ne]==j)
                  && (grid->grad[2*ne+1]==i)) ) {
-            for(k=grid->etop[ne];k<grid->Nke[ne];k++)
+            for(k=grid->etopold[ne];k<grid->Nke[ne];k++)
               phys->u[ne][k] = 0;
 #ifdef DBG_PROC
             if(DBG_PROC==myproc) {
@@ -3835,7 +3574,6 @@ static void UPredictor(gridT *grid, physT *phys,
       }
     }
   }
-
 }
 
 /*
@@ -4269,14 +4007,17 @@ static void OperatorQ(REAL **coef, REAL **x, REAL **y, REAL **c, gridT *grid, ph
         ne = grid->face[i*grid->maxfaces+nf];
 
         // determine the minimal k based on each cell over edge
-        if(grid->ctop[nc]>grid->ctop[i])
-          kmin = grid->ctop[nc];
-        else
-          kmin = grid->ctop[i];
+        //if(grid->ctop[nc]>grid->ctop[i])
+        //  kmin = grid->ctop[nc];
+        //else
+        //  kmin = grid->ctop[i];
+        /// RH: why not just use etop? and we're called after UPredictor,
+        //  so this should use etopold
+        kmin=grid->etopold[ne];
 
         // create summed contributions for cell along the vertical
         for(k=kmin;k<grid->Nke[ne];k++) 
-          y[i][k]+=(x[nc][k]-x[i][k])*grid->dzf[ne][k]*phys->D[ne];
+          y[i][k]+=(x[nc][k]-x[i][k])*grid->dzfold[ne][k]*phys->D[ne];
       }
     // otherwise y[i][...] = 0 (boundary cell with no gradient in horiz.)
 
@@ -4602,7 +4343,7 @@ void Continuity(REAL **w, gridT *grid, physT *phys, propT *prop)
 
         if(k<grid->Nke[ne])
           w[i][k]-=(theta*phys->u[ne][k]+(1-theta)*phys->utmp2[ne][k])*
-            grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/grid->Ac[i]/theta*grid->dzf[ne][k];
+            grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/grid->Ac[i]/theta*grid->dzfold[ne][k];
       }
     }
   }
@@ -4705,8 +4446,8 @@ static void ComputeUCPerot(REAL **u, REAL **uc, REAL **vc, gridT *grid) {
       for(nf=0;nf<grid->nfaces[n];nf++) {
         ne = grid->face[n*grid->maxfaces+nf];
         if(!(grid->smoothbot) || k<grid->Nke[ne]){
-          uc[n][k]+=u[ne][k]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne]*grid->dzf[ne][k];
-          vc[n][k]+=u[ne][k]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne]*grid->dzf[ne][k];
+          uc[n][k]+=u[ne][k]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne]*grid->dzfold[ne][k];
+          vc[n][k]+=u[ne][k]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne]*grid->dzfold[ne][k];
         } else {
           printf("Don't do this!");
           uc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne]*grid->dzf[ne][grid->Nke[ne]-1];
@@ -4715,7 +4456,7 @@ static void ComputeUCPerot(REAL **u, REAL **uc, REAL **vc, gridT *grid) {
       }
 
       // In case of divide by zero (shouldn't happen)
-      if (grid->dzz[n][k]  > DRYCELLHEIGHT) {
+      if (grid->dzz[n][k] > DRYCELLHEIGHT) {
           uc[n][k]/=(grid->Ac[n]*grid->dzz[n][k]);
           vc[n][k]/=(grid->Ac[n]*grid->dzz[n][k]);
       } else {
@@ -4732,8 +4473,10 @@ static void ComputeUCPerot(REAL **u, REAL **uc, REAL **vc, gridT *grid) {
       for(nf=0;nf<grid->nfaces[n];nf++) {
         ne = grid->face[n*grid->maxfaces+nf];
         if(!(grid->smoothbot) || k<grid->Nke[ne]){
-          uc[n][k]+=u[ne][k]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
-          vc[n][k]+=u[ne][k]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
+          if (k>=grid->etopold[ne]) {
+            uc[n][k]+=u[ne][k]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
+            vc[n][k]+=u[ne][k]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
+          }
         } else {
           uc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n1[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
           vc[n][k]+=u[ne][grid->Nke[ne]-1]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];        
@@ -4798,10 +4541,8 @@ static void ComputeUCLSQ(REAL **u, REAL **uc, REAL **vc, gridT *grid, physT *phy
 		ne = grid->face[n*grid->maxfaces+nf];
 		if(!(grid->smoothbot) || k<grid->Nke[ne]){
 		    sum += AT[ii][nf]*u[ne][k];
-		    //sum += AT[ii][nf]*u[ne][k]*grid->dzf[ne][k];
 		} else{
 		    sum += AT[ii][nf]*u[ne][grid->Nke[ne]-1];
-		    //sum += AT[ii][nf]*u[ne][grid->Nke[ne]-1]*grid->dzf[ne][grid->Nke[ne]-1];
 		}
 	    }
 	    bpr[ii]=sum;
@@ -4811,15 +4552,7 @@ static void ComputeUCLSQ(REAL **u, REAL **uc, REAL **vc, gridT *grid, physT *phy
        
 	uc[n][k]=bpr[0];
 	vc[n][k]=bpr[1];	
-	//if (grid->dzz[n][k]  > 1e-3) {
-	//    uc[n][k]=bpr[0]/grid->dzz[n][k];
-	//    vc[n][k]=bpr[1]/grid->dzz[n][k];
-	//}else{
-	//    uc[n][k]=0;
-	//    vc[n][k]=0;
-	//}
     }
-
   }
 }
 
@@ -5105,58 +4838,21 @@ void SetDensity(gridT *grid, physT *phys, propT *prop) {
  * -------------------------------------
  * Set the value of the flux height dzf at time step n for use
  * in continuity and scalar transport.
+ * called from UpdateDZ, option has the same meaning as there,
+ *  0: normal operation, 
+ *  1: initialization, assume u is not set.
  *
  */
-void SetFluxHeight(gridT *grid, physT *phys, propT *prop) {
-  //static void SetFluxHeight(gridT *grid, physT *phys, propT *prop) {
+void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option) {
   int i, j, k, nc1, nc2;
   REAL dz_bottom, dzsmall=grid->dzsmall;
-
-  //  // assuming upwinding
-  //  for(j=0;j<grid->Ne;j++) {
-  //    nc1 = grid->grad[2*j];
-  //    nc2 = grid->grad[2*j+1];
-  //    if(nc1==-1) nc1=nc2;
-  //    if(nc2==-1) nc2=nc1;
-  //
-  //    for(k=0;k<grid->etop[j];k++)
-  
-  //      grid->dzf[j][k]=0;
-  //    for(k=grid->etop[j];k<grid->Nke[j];k++) 
-  //      grid->dzf[j][k]=UpWind(phys->u[j][k],grid->dzz[nc1][k],grid->dzz[nc2][k]);
-  //
-  //    k=grid->Nke[j]-1;
-  //    /* This works with Wet/dry but not with cylinder case...*/
-  //    if(grid->etop[j]==k)
-  //      grid->dzf[j][k]=Max(0,UpWind(phys->u[j][k],phys->h[nc1],phys->h[nc2])+Min(grid->dv[nc1],grid->dv[nc2]));
-  //    else 
-  //      grid->dzf[j][k]=Min(grid->dzz[nc1][k],grid->dzz[nc2][k]);
-  //    /*
-  //       if(grid->Nk[nc1]!=grid->Nk[nc2])
-  //       dz_bottom = Min(grid->dzz[nc1][k],grid->dzz[nc2][k]);
-  //       else
-  //       dz_bottom = 0.5*(grid->dzz[nc1][k]+grid->dzz[nc2][k]);
-  //       if(k==grid->etop[j])
-  //       grid->dzf[j][k]=Max(0,dz_bottom + UpWind(phys->u[j][k],phys->h[nc1],phys->h[nc2]));
-  //       else
-  //       grid->dzf[j][k]=dz_bottom;
-  //     */
-  //
-  //    for(k=grid->etop[j];k<grid->Nke[j];k++) 
-  //      if(grid->dzf[j][k]<=DRYCELLHEIGHT)
-  //        grid->dzf[j][k]=0;
-  //  }
-  // initialize dzf
-  for(j=0;j<grid->Ne;j++) {
-    for(k=0; k<grid->Nkc[j];k++)
-      grid->dzf[j][k]=0;
-  }
+  REAL z;
 
   // assuming central differencing
+  // RH: this seems like it should be in UpdateDZ, though see comment at
+  // end of this function
   if(grid->smoothbot) {
     for(i=0;i<grid->Nc;i++) {
-      //if(grid->dzz[i][grid->Nk[i]-1]>grid->dzbot[i])
-      //printf("i=%d dzz=%e, dzbot=%e dzsmall=%e\n",i,grid->dzz[i][grid->Nk[i]-1],grid->dzbot[i],dzsmall);
       grid->dzz[i][grid->Nk[i]-1]=Max(grid->dzbot[i],grid->smoothbot*grid->dz[grid->Nk[i]-1]);
     }
   }
@@ -5167,43 +4863,69 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop) {
     if(nc1==-1) nc1=nc2;
     if(nc2==-1) nc2=nc1;
 
-    for(k=0;k<grid->etop[j];k++) {
+    // initialize dzf to 0.
+    for(k=0; k<grid->Nkc[j];k++)
       grid->dzf[j][k]=0;
-    }
-    for(k=grid->etop[j];k<grid->Nke[j];k++) {
-      //      grid->dzf[j][k]=UFaceFlux(j,k, grid->dzz, phys->u, grid,prop->dt,prop->nonlinear);
-      grid->dzf[j][k]=UpWind(phys->u[j][k],grid->dzz[nc1][k],grid->dzz[nc2][k]);
-    }
 
-    k=grid->Nke[j]-1;
-    /* This works with Wet/dry but not with cylinder case...*/
-    if(grid->etop[j]==k) {
-//      grid->dzf[j][k]=Max(0,HFaceFlux(j,k,phys->h,phys->u,grid,prop->dt,prop->nonlinear)
-//          +Min(grid->dv[nc1],grid->dv[nc2]));
-      grid->dzf[j][k]=Max(0,UpWind(phys->u[j][k],phys->h[nc1],phys->h[nc2])+Min(grid->dv[nc1],grid->dv[nc2]));
-    } else  {
-      grid->dzf[j][k]=Min(grid->dzz[nc1][k],grid->dzz[nc2][k]);
+    // set nc1 to the upwind cell, or cell with higher eta
+    // if option is set, then we can't use u or etop, but ctop
+    // and h are fair game
+    if ( !option
+         && grid->etop[j] < grid->Nke[j]
+         && phys->u[j][grid->etop[j]]!=0.0 ) {
+      if( phys->u[j][grid->etop[j]] > 0 ) 
+        // nc2 is the upwind cell
+        nc1=nc2;
+      // otherwise nc1 already refers to the upwind cell.
+    } else {
+      // edge is dry, has no velocity, or this is before u has been calculated
+      if (phys->h[nc2] > phys->h[nc1] )
+        nc1 = nc2;
     }
-    /*
-       if(grid->Nk[nc1]!=grid->Nk[nc2])
-       dz_bottom = Min(grid->dzz[nc1][k],grid->dzz[nc2][k]);
-       else
-       dz_bottom = 0.5*(grid->dzz[nc1][k]+grid->dzz[nc2][k]);
-       if(k==grid->etop[j])
-       grid->dzf[j][k]=Max(0,dz_bottom + UpWind(phys->u[j][k],phys->h[nc1],phys->h[nc2]));
-       else
-       grid->dzf[j][k]=dz_bottom;
-       */
+    // total depth at edge referenced to upwind freesurface
+    // N.B. can start off negative
+    z = phys->h[nc1] - (-grid->de[j]);
 
-    for(k=grid->etop[j];k<grid->Nke[j];k++)
-      if(grid->dzf[j][k]<=DRYCELLHEIGHT)
-        grid->dzf[j][k]=0;
+    if ( z<0 ) {
+      // Edge is dry.  All dzf already set to zero before main loop
+      grid->etop[j]=grid->Nke[j];
+    } else {
+      // grab top of edge from upwinded cell
+      grid->etop[j]=grid->ctop[nc1];
+      
+      for(k=grid->etop[j];k<grid->Nke[j];k++) {
+        if (z>0) {
+          grid->dzf[j][k]=grid->dzz[nc1][k];
+          z-=grid->dzf[j][k];
+          
+          if(k==grid->Nke[j]-1) { // bed layer for edge
+            // the last cell gets the remainder - at this point z could be positive
+            // if this cell includes a lumped lower cell, or negative if this is a cut
+            // cell.  lumping is not currently in this codebase, but could be
+            // in the future
+            grid->dzf[j][k]+=z;
+            z=0.0;
+          }
+        } else {
+          // does this ever happen?  
+          printf("Setting dzf[j=%d][k=%d]=0, which seems very bad\n",j,k);
+          exit(1);
+          grid->dzf[j][k] = 0.0; // why would we want to do that?  big problem.
+        }
+      }
+    }
+    // RH - my old code saved he. probably not important right now.
+    // phys->he[j] = phys->h[nc1];
   }
 
-  //set minimum dzz
+  //set minimum dzz -- RH: seems that this should be in
+  // UpdateDZ, although maybe it's a hack to treat dzf slightly differently
+  // than dzz
   if(grid->smoothbot)
     for(i=0;i<grid->Nc;i++)
       grid->dzz[i][grid->Nk[i]-1]=Max(grid->dzz[i][grid->Nk[i]-1],dzsmall*grid->dz[grid->Nk[i]-1]);
+
+  // NB: UpdateDZ, the caller, handles etopold and dzfold
 }
 
 
@@ -5276,14 +4998,14 @@ static void ComputeUCRT(REAL **ui, REAL **vi, physT *phys, gridT *grid, int mypr
     // of the loop (etop?)
     //    if(myproc==0) printf("ComputeQuadraticInterp\n");
     if(grid->nfaces[n]==3){
-    for(k=grid->ctop[n];k<grid->Nk[n];k++) {
-      // now we can compute the quadratic interpolated velocity from these results
-      ComputeQuadraticInterp(grid->xv[n], grid->yv[n], n, k, ui, 
-          vi, phys, grid, nRT2, tRT2, myproc);
-    }
+      for(k=grid->ctop[n];k<grid->Nk[n];k++) {
+        // now we can compute the quadratic interpolated velocity from these results
+        ComputeQuadraticInterp(grid->xv[n], grid->yv[n], n, k, ui, 
+                               vi, phys, grid, nRT2, tRT2, myproc);
+      }
     } else {
        // over the entire depth (cell depth)
-       for(k=grid->ctop[n];k<grid->Nk[n];k++) {
+      for(k=grid->ctop[n];k<grid->Nk[n];k++) {
         // over each face
         for(nf=0;nf<grid->nfaces[n];nf++) {
           ne = grid->face[n*grid->maxfaces+nf];
@@ -5296,7 +5018,6 @@ static void ComputeUCRT(REAL **ui, REAL **vi, physT *phys, gridT *grid, int mypr
             phys->vc[n][k]+=phys->u[ne][grid->Nke[ne]-1]*grid->n2[ne]*grid->def[n*grid->maxfaces+nf]*grid->df[ne];
           }
         }
-
         phys->uc[n][k]/=grid->Ac[n];
         phys->vc[n][k]/=grid->Ac[n];
       }

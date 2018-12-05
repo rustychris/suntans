@@ -1,0 +1,12 @@
+etop[j] <= Nke[j]
+
+etop >= min(ctop[nc1],ctop[nc2])
+
+etop==Nke[j] if etop > min(ctop[nc1],ctop[nc2])
+ - edges can be dried out with a top k deeper than neighboring ctops
+ 
+dzf[j][k]==0 for k<etop[j]
+
+u[j][k]==0 for k<etop[j]
+
+

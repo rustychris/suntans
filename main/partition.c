@@ -171,8 +171,14 @@ static void GetGraph(GraphType *graph, gridT *grid, MPI_Comm comm)
   else 
     MPI_Recv((void *)graph->adjncy, graph->nedges, IDX_DATATYPE, 0, 1, comm, &status);
 
-  if (myproc == 0) 
-    GKfree(&gxadj, &gadjncy, LTERM);
+  if (myproc == 0) {
+    // this yields compiler warnings because of a prototype that's commented
+    // out for some reason.  It's just a thin wrapper on free(), so call free()
+    // directly.
+    //GKfree(&gxadj, &gadjncy, LTERM);
+    free(gxadj);gxadj=NULL;
+    free(gadjncy); gadjncy=NULL;
+  }
 
   MALLOC_CHECK(NULL);
 }

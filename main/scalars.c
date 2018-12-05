@@ -308,7 +308,7 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
 
       for(k=0;k<grid->Nke[ne];k++)
         ap[k] += dt*df*normal/Ac*(theta*phys->u[ne][k]+(1-theta)*phys->utmp2[ne][k])
-          *temp[k]*grid->dzf[ne][k];
+          *temp[k]*grid->dzfold[ne][k];
     }
 
     for(k=ktop+1;k<grid->Nk[i];k++) 
@@ -405,7 +405,6 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
         printf("Minimum scalar: %.2f, maximum: %.2f\n",smin_value,smax_value);
     }      
 
-    //for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
       i = grid->cellp[iptr];
 
@@ -428,7 +427,7 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
           for(nf=0;nf<grid->nfaces[i];nf++) {
             ne=grid->face[i*grid->maxfaces+nf];
             div_local+=(theta*phys->u[ne][k]+(1-theta)*phys->utmp2[ne][k])
-              *grid->dzf[ne][k]*grid->normal[i*grid->maxfaces+nf]*grid->df[ne];
+              *grid->dzfold[ne][k]*grid->normal[i*grid->maxfaces+nf]*grid->df[ne];
           }
           div_da+=div_local;
           div_local+=grid->Ac[i]*(theta*(wnew[i][k]-wnew[i][k+1])+
