@@ -81,13 +81,17 @@ typedef struct _physT {
   REAL *boundary_h;
   REAL *boundary_flag;
 
+  // Point sources ??
+  // REAL **
+  // REAL **point_
+
   REAL **nu_tv;
   REAL **kappa_tv;
   REAL **nu_lax;
   REAL *tau_T;
   REAL *tau_B;
   REAL *z0B_spec; // for externally specified, spatially varying roughness
-  // RH do we really need this? REAL *z0B_used; // record result of any specified or depth-varied roughness
+
   REAL *CdT;
   REAL *CdB;
   REAL **qT;

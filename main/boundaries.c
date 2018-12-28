@@ -64,6 +64,72 @@ void OpenBoundaryFluxes(REAL **q, REAL **ub, REAL **ubn, gridT *grid, physT *phy
   }
 }
 
+/* Function: PointSources
+ * Usage: PointSources(grid,phys,prop,myproc, comm);
+ * -------------------------------------------------------------
+ * Updates cell volumes with point-source flows
+ */
+void PointSources(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm)
+{
+  int i,i_src;
+  REAL Q;
+  
+  for(i=0;i<bound->Npoint_source;i++) {
+    Q=bound->point_Q[i];
+    i_src=bound->point_cell[i];
+    phys->h[i_src] += prop->dt*Q / grid->Ac[i_src];
+  }
+}
+
+void PointSourcesContinuity(REAL **w, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm)
+{
+  int i,k;
+  int i_src;
+  int k_src;
+  REAL Q;
+
+  for(i=0;i<bound->Npoint_source;i++) {
+    Q=bound->point_Q[i];
+    i_src=bound->point_cell[i];
+    k_src=bound->point_layer[i];
+    
+    for(k=k_src;k>=grid->ctop[i_src];k--) {
+      w[i_src][k] += Q/grid->Ac[i_src];
+    }
+  }
+}
+
+void PointSourceScalar(REAL *scalar,REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm)
+{
+  int i;
+  int i_src;
+  int k_src;
+  REAL Q_src;
+  
+  // what is the difference between A and B?
+  // UpdateScalars takes src1 (B) and src2 (A)
+  //  - src1 is added to the diagonal in the tridiag system,
+  //    and has units of 1/time.
+  //  - src2 is added to the rhs. is has units of concentration/time
+  for(i=0;i<bound->Npoint_source;i++) {
+    i_src=bound->point_cell[i];
+    k_src=bound->point_layer[i];
+    Q_src=bound->point_Q[i];
+    printf("Updating scalar: A[i=%d][k=%d] += scal=%.2f\n",
+           i_src,k_src,scalar[i]);
+    A[i_src][k_src] += scalar[i]*Q_src/(grid->Ac[i_src]*grid->dzzold[i_src][k_src]);
+  }
+}
+
+void PointSourceTemp(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm)
+{
+  PointSourceScalar(bound->point_T,A,B,grid,phys,prop,myproc,comm);
+}
+void PointSourceSalt(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm)
+{
+  PointSourceScalar(bound->point_S,A,B,grid,phys,prop,myproc,comm);
+}
+
 
 /*
  * Function: BoundaryScalars
@@ -413,9 +479,8 @@ void InitBoundaryData(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
     // Step 4) Read in the forward and backward time steps into the boundary arrays
     if(VERBOSE>1 && myproc==0) printf("Reading netcdf boundary initial data...\n");
     ReadBdyNC(prop, grid, myproc,comm);
-   
     
- }//end function
+}//end function
 
  /*
   * Function: UpdateBdyNC()
@@ -659,6 +724,19 @@ static void MatchBndPoints(propT *prop, gridT *grid, int myproc){
     }
     //printf("Type 3 : Processor = %d, jptr = %d, cellp[jptr]=%d, bound->ind3[ii]=%d\n",myproc,jptr,grid->cellp[jptr],bound->ind3[ii]);
   }
+
+
+  if(myproc==0) printf("Matching point source cells...\n");
+  for(ii=0;ii<grid->Nc;ii++) {
+    for(jj=0;jj<bound->Npoint_source;jj++){
+      if(grid->mnptr[ii]==bound->point_cell[jj]){
+        bound->ind_point[jj]=ii;
+        printf("Matched point source %d (cell=%d) to proc=%d cell=%d\n",
+               jj,bound->point_cell[jj],myproc,ii);
+      }
+    }
+  }
+  
   if(myproc==0) printf("Matching type-2 edges...\n");
 
   //Type-3 edges
@@ -691,299 +769,290 @@ static void MatchBndPoints(propT *prop, gridT *grid, int myproc){
  * Allocate boundary structure arrays.
  */
 void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, MPI_Comm comm){
+  int Ntype2, Ntype3, Nseg, Nt, Nk, Npoint_source;
+  int j, k, i, n;
+  int n3, n3e, n2; // Number of type 2 and 3 on a processor's grid
+  
+  //Allocate memory
+  if(VERBOSE>1 && myproc==0) printf("Allocating boundary data structure...\n");
+  
+  *bound = (boundT *)SunMalloc(sizeof(boundT),"AllocateBoundaryData");
 
-     int Ntype2, Ntype3, Nseg, Nt, Nk;
-     int j, k, i, n;
-     int n3, n3e, n2; // Number of type 2 and 3 on a processor's grid
+  // Read in the dimensions
+  printf("Reading boundary netcdf dimensions...\n");
+  Ntype3 = returndimlenBC(prop->netcdfBdyFileID,"Ntype3");
+  Ntype2 = returndimlenBC(prop->netcdfBdyFileID,"Ntype2");
+  Nseg = returndimlenBC(prop->netcdfBdyFileID,"Nseg");
+  Nt = returndimlenBC(prop->netcdfBdyFileID,"Nt");
+  Nk = returndimlenBC(prop->netcdfBdyFileID,"Nk");
+  Npoint_source = returndimlenBC(prop->netcdfBdyFileID,"Npoint");
+  
+  (*bound)->Ntype3=Ntype3;
+  (*bound)->Nseg=Nseg;
+  (*bound)->Ntype2=Ntype2;
+  (*bound)->Nt=Nt;
+  (*bound)->Nk=Nk;
+  (*bound)->Npoint_source=Npoint_source;
 
-    //Allocate memory
-    if(VERBOSE>1 && myproc==0) printf("Allocating boundary data structure...\n");
-      *bound = (boundT *)SunMalloc(sizeof(boundT),"AllocateBoundaryData");
-
-    /*
-    // Read in the dimensions
-    //if(myproc==0){
-	printf("Reading boundary netcdf dimensions...\n");
-	//printf("Reading dimension: Ntype3...\n");
-	(*bound)->Ntype3 = returndimlenBC(prop->netcdfBdyFileID,"Ntype3");
-	//printf("Reading dimension: Ntype2...\n");
-	(*bound)->Ntype2 = returndimlenBC(prop->netcdfBdyFileID,"Ntype2");
-	//printf("Reading dimension: Nseg...\n");
-	(*bound)->Nseg = returndimlenBC(prop->netcdfBdyFileID,"Nseg");
-	//printf("Reading dimension: Nt...\n");
-	(*bound)->Nt = returndimlenBC(prop->netcdfBdyFileID,"Nt");
-	//printf("Reading dimension: Nk...\n");
-	(*bound)->Nk = returndimlenBC(prop->netcdfBdyFileID,"Nk");
-    //}
-    //MPI_Bcast(&((*bound)->Ntype3),1,MPI_INT,0,comm);
-    //MPI_Bcast(&((*bound)->Ntype2),1,MPI_INT,0,comm);
-    //MPI_Bcast(&((*bound)->Nseg),1,MPI_INT,0,comm);
-    //MPI_Bcast(&((*bound)->Nt),1,MPI_INT,0,comm);
-    //MPI_Bcast(&((*bound)->Nk),1,MPI_INT,0,comm);
-
-    Ntype3 = (*bound)->Ntype3;
-    Nseg = (*bound)->Nseg;
-    Ntype2 = (*bound)->Ntype2;
-    Nt = (*bound)->Nt;
-    Nk = (*bound)->Nk;
-    */
-    // Read in the dimensions
-    //if(myproc==0){
-	printf("Reading boundary netcdf dimensions...\n");
-	Ntype3 = returndimlenBC(prop->netcdfBdyFileID,"Ntype3");
-	Ntype2 = returndimlenBC(prop->netcdfBdyFileID,"Ntype2");
-	Nseg = returndimlenBC(prop->netcdfBdyFileID,"Nseg");
-	Nt = returndimlenBC(prop->netcdfBdyFileID,"Nt");
-	Nk = returndimlenBC(prop->netcdfBdyFileID,"Nk");
-    //}
-    /*
-    MPI_Bcast(&(Ntype3),1,MPI_INT,0,comm);
-    MPI_Bcast(&(Ntype2),1,MPI_INT,0,comm);
-    MPI_Bcast(&(Nseg),1,MPI_INT,0,comm);
-    MPI_Bcast(&(Nt),1,MPI_INT,0,comm);
-    MPI_Bcast(&(Nk),1,MPI_INT,0,comm);
-    */
-
-    (*bound)->Ntype3=Ntype3;
-    (*bound)->Nseg=Nseg;
-    (*bound)->Ntype2=Ntype2;
-    (*bound)->Nt=Nt;
-    (*bound)->Nk=Nk;
-
-    // Check if boundary types are in the file
-    if ((*bound)->Ntype3==0){
-    	(*bound)->hasType3=0;
-    }else{
-    	(*bound)->hasType3=1;
-    }
-
-    if ((*bound)->Ntype2==0){
-    	(*bound)->hasType2=0;
-    }else{
-    	(*bound)->hasType2=1;
-    }
+  // Check if boundary types are in the file
+  if ( (*bound)->Ntype3==0 ) {
+    (*bound)->hasType3=0;
+  } else {
+    (*bound)->hasType3=1;
+  }
+  
+  if ((*bound)->Ntype2==0){
+    (*bound)->hasType2=0;
+  } else {
+    (*bound)->hasType2=1;
+  }
     
-    if ((*bound)->Nseg==0){
-    	(*bound)->hasSeg=0;
-    }else{
-    	(*bound)->hasSeg=1;
+  if ((*bound)->Nseg==0){
+    (*bound)->hasSeg=0;
+  } else {
+    (*bound)->hasSeg=1;
+  }
+
+  // Print the array sizes
+  if(VERBOSE>1 && myproc==0){
+    printf("Ntype 3 = %d\n",Ntype3);
+    printf("Ntype 2 = %d\n",Ntype2);
+    printf("Nseg= %d\n",Nseg);
+    printf("Nt = %d\n",Nt);
+    printf("Nk = %d\n",Nk);
+    printf("Npoint_source = %d\n",Npoint_source);
+    printf("hasType2 = %d\n",(*bound)->hasType2);
+    printf("hasType3 = %d\n",(*bound)->hasType3);
+    printf("hasSeg = %d\n",(*bound)->hasSeg);
+  }
+
+  if((*bound)->Npoint_source) {
+    (*bound)->point_cell=(int*)SunMalloc( Npoint_source*sizeof(int),"AllocateBoundaryData");
+    (*bound)->point_layer=(int*)SunMalloc( Npoint_source*sizeof(int),"AllocateBoundaryData");
+    (*bound)->ind_point=(int*)SunMalloc( Npoint_source*sizeof(int),"AllocateBoundaryData");
+    
+    (*bound)->point_Q=(REAL*)SunMalloc( Npoint_source*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->point_T=(REAL*)SunMalloc( Npoint_source*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->point_S=(REAL*)SunMalloc( Npoint_source*sizeof(REAL),"AllocateBoundaryData");
+    for(i=0;i<(*bound)->Npoint_source;i++){
+      (*bound)->ind_point[i]=-1;
+      (*bound)->point_cell[i]=-1;
+      (*bound)->point_layer[i]=-1;
     }
-
-    // Print the array sizes
-    if(VERBOSE>1 && myproc==0){
-	printf("Ntype 3 = %d\n",Ntype3);
-	printf("Ntype 2 = %d\n",Ntype2);
-	printf("Nseg= %d\n",Nseg);
-	printf("Nt = %d\n",Nt);
-	printf("Nk = %d\n",Nk);
-	printf("hasType2 = %d\n",(*bound)->hasType2);
-	printf("hasType3 = %d\n",(*bound)->hasType3);
-	printf("hasSeg = %d\n",(*bound)->hasSeg);
+  } else {
+    (*bound)->point_cell=NULL;
+    (*bound)->point_layer=NULL;
+    (*bound)->ind_point=NULL;
+    
+    (*bound)->point_Q=NULL;
+    (*bound)->point_T=NULL;
+    (*bound)->point_S=NULL;
+  }
+  
+  // Allocate the type2 arrays
+  if((*bound)->hasType2==1){
+    (*bound)->edgep = (int *)SunMalloc(Ntype2*sizeof(int),"AllocateBoundaryData");
+    (*bound)->localedgep = (int *)SunMalloc(Ntype2*sizeof(int),"AllocateBoundaryData");
+    (*bound)->xe = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->ye = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
+    
+    (*bound)->boundary_u = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->boundary_v = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->boundary_w = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->boundary_T = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->boundary_S = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+    
+    (*bound)->boundary_u_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->boundary_v_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->boundary_w_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->boundary_T_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->boundary_S_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    
+    for(k=0;k<Nk;k++){
+      (*bound)->boundary_u[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->boundary_v[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->boundary_w[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->boundary_T[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->boundary_S[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
     }
-    // Allocate the type2 arrays
-    if((*bound)->hasType2==1){
-	(*bound)->edgep = (int *)SunMalloc(Ntype2*sizeof(int),"AllocateBoundaryData");
-	(*bound)->localedgep = (int *)SunMalloc(Ntype2*sizeof(int),"AllocateBoundaryData");
-	(*bound)->xe = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->ye = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-
-	(*bound)->boundary_u = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->boundary_v = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->boundary_w = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->boundary_T = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->boundary_S = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-
-	(*bound)->boundary_u_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->boundary_v_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->boundary_w_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->boundary_T_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->boundary_S_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-
-	for(k=0;k<Nk;k++){
-	    (*bound)->boundary_u[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->boundary_v[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->boundary_w[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->boundary_T[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->boundary_S[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-	}
-	for(n=0;n<NT;n++){
-	    (*bound)->boundary_u_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->boundary_v_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->boundary_w_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->boundary_T_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->boundary_S_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	    for(k=0;k<Nk;k++){
-		 (*bound)->boundary_u_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-		 (*bound)->boundary_v_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-		 (*bound)->boundary_w_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-		 (*bound)->boundary_T_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-		 (*bound)->boundary_S_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-	    }
-	}
-	// Allocate the pointer arrays for each processor's grid
-	n2 = grid->edgedist[3]-grid->edgedist[2];
-	(*bound)->ind2 = (int *)SunMalloc(n2*sizeof(int),"AllocateBoundaryData");
-    }//endif
-
-    // Allocate the segment arrays (subset of type2)
-    if ((*bound)->hasSeg==1){
-	(*bound)->segp = (int *)SunMalloc(Nseg*sizeof(int),"AllocateBoundaryData");
-	(*bound)->segedgep = (int *)SunMalloc(Ntype2*sizeof(int),"AllocateBoundaryData");
-
-	(*bound)->segarea = (REAL *)SunMalloc(Nseg*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->localsegarea = (REAL *)SunMalloc(Nseg*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->boundary_Q  = (REAL *)SunMalloc(Nseg*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->boundary_Q_t  = (REAL **)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-	for(n=0;n<NT;n++){
-	    (*bound)->boundary_Q_t[n] = (REAL *)SunMalloc(Nseg*sizeof(REAL),"AllocateBoundaryData");
-	}
+    for(n=0;n<NT;n++){
+      (*bound)->boundary_u_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->boundary_v_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->boundary_w_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->boundary_T_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->boundary_S_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+      for(k=0;k<Nk;k++){
+        (*bound)->boundary_u_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
+        (*bound)->boundary_v_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
+        (*bound)->boundary_w_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
+        (*bound)->boundary_T_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
+        (*bound)->boundary_S_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
+      }
     }
-    // Allocate the type3 arrays   
-    if((*bound)->hasType3==1){
-	(*bound)->cellp = (int *)SunMalloc(Ntype3*sizeof(int),"AllocateBoundaryData");
-	(*bound)->xv = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->yv = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-
-	(*bound)->h = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->h_t = (REAL **)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-
-	(*bound)->uc = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->vc = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->wc = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->T = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->S = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-
-	(*bound)->uc_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->vc_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->wc_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->T_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-	(*bound)->S_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-
-	for(k=0;k<Nk;k++){
-	    (*bound)->uc[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->vc[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->wc[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->T[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->S[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-	}
-	for(n=0;n<NT;n++){
-	    (*bound)->uc_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->vc_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->wc_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->T_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	    (*bound)->S_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-	    for(k=0;k<Nk;k++){
-		(*bound)->uc_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-		(*bound)->vc_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-		(*bound)->wc_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-		(*bound)->T_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-		(*bound)->S_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-	    }
-	    (*bound)->h_t[n] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-	}
-	// Allocate the pointer arrays for each processor's grid
-	n3 = grid->celldist[2]-grid->celldist[1];
-        // RH: very conservative.  Either we have to allow for more
-        n3e= n3*grid->maxfaces;
-        // it is possible, in particular in mpi, for the later code to
-        // find more than n3 edges to put into ind3edge.  At the moment there is no code
-        // which uses ind3edge.  allocate it conservatively large and press on.
-	(*bound)->ind3 = (int *)SunMalloc(n3*sizeof(int),"AllocateBoundaryData");
-	(*bound)->ind3edge = (int *)SunMalloc(n3e*sizeof(int),"AllocateBoundaryData");
-    }//endif
-
-    (*bound)->time = (REAL *)SunMalloc(Nt*sizeof(REAL),"AllocateBoundaryData");
-    (*bound)->z = (REAL *)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-
-    // Zero the boundary arrays
-    if(myproc==0) printf("Zeroing boundary arrays...\n");
-
-    for(j=0;j<(*bound)->Nt;j++){
-	(*bound)->time[j]=0.0;
+    // Allocate the pointer arrays for each processor's grid
+    n2 = grid->edgedist[3]-grid->edgedist[2];
+    (*bound)->ind2 = (int *)SunMalloc(n2*sizeof(int),"AllocateBoundaryData");
+  }//endif
+  
+  // Allocate the segment arrays (subset of type2)
+  if ((*bound)->hasSeg==1){
+    (*bound)->segp = (int *)SunMalloc(Nseg*sizeof(int),"AllocateBoundaryData");
+    (*bound)->segedgep = (int *)SunMalloc(Ntype2*sizeof(int),"AllocateBoundaryData");
+    
+    (*bound)->segarea = (REAL *)SunMalloc(Nseg*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->localsegarea = (REAL *)SunMalloc(Nseg*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->boundary_Q  = (REAL *)SunMalloc(Nseg*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->boundary_Q_t  = (REAL **)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    for(n=0;n<NT;n++){
+      (*bound)->boundary_Q_t[n] = (REAL *)SunMalloc(Nseg*sizeof(REAL),"AllocateBoundaryData");
     }
-    (*bound)->t0=-1;
-    (*bound)->t1=-1;
-    (*bound)->t2=-1;
-    for(k=0;k<(*bound)->Nk;k++){
-	(*bound)->z[k]=0.0;
+  }
+  // Allocate the type3 arrays   
+  if((*bound)->hasType3==1){
+    (*bound)->cellp = (int *)SunMalloc(Ntype3*sizeof(int),"AllocateBoundaryData");
+    (*bound)->xv = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->yv = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+    
+    (*bound)->h = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->h_t = (REAL **)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    
+    (*bound)->uc = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->vc = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->wc = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->T = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->S = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+    
+    (*bound)->uc_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->vc_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->wc_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->T_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    (*bound)->S_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    
+    for(k=0;k<Nk;k++){
+      (*bound)->uc[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->vc[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->wc[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->T[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->S[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
     }
-
-    if((*bound)->hasType2>0){
-	for(j=0;j<Ntype2;j++){
-	    (*bound)->edgep[j]=0;
-	    (*bound)->localedgep[j]=-1;
-	    (*bound)->xe[j]=0.0;
-	    (*bound)->ye[j]=0.0;
-	    for(k=0;k<Nk;k++){
-		(*bound)->boundary_u[k][j]=0.0;
-		(*bound)->boundary_v[k][j]=0.0;
-		(*bound)->boundary_w[k][j]=0.0;
-		(*bound)->boundary_T[k][j]=0.0;
-		(*bound)->boundary_S[k][j]=0.0;
-		for(n=0;n>NT;n++){
-		    (*bound)->boundary_u_t[n][k][j]=0.0;
-		    (*bound)->boundary_v_t[n][k][j]=0.0;
-		    (*bound)->boundary_w_t[n][k][j]=0.0;
-		    (*bound)->boundary_T_t[n][k][j]=0.0;
-		    (*bound)->boundary_S_t[n][k][j]=0.0;
-		}
-	    }
-	}
-	for(i=0;i<n2;i++){
-	    (*bound)->ind2[i]=-1;
-	}
+    for(n=0;n<NT;n++){
+      (*bound)->uc_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->vc_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->wc_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->T_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+      (*bound)->S_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+      for(k=0;k<Nk;k++){
+        (*bound)->uc_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+        (*bound)->vc_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+        (*bound)->wc_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+        (*bound)->T_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+        (*bound)->S_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+      }
+      (*bound)->h_t[n] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
     }
+    // Allocate the pointer arrays for each processor's grid
+    n3 = grid->celldist[2]-grid->celldist[1];
+    // RH: very conservative.  Either we have to allow for more
+    n3e= n3*grid->maxfaces;
+    // it is possible, in particular in mpi, for the later code to
+    // find more than n3 edges to put into ind3edge.  At the moment there is no code
+    // which uses ind3edge.  allocate it conservatively large and press on.
+    (*bound)->ind3 = (int *)SunMalloc(n3*sizeof(int),"AllocateBoundaryData");
+    (*bound)->ind3edge = (int *)SunMalloc(n3e*sizeof(int),"AllocateBoundaryData");
+  }//endif
 
-    if((*bound)->hasSeg>0){
-	for(j=0;j<Ntype2;j++){
-	    (*bound)->segedgep[j]=0;
-	}
-	for(j=0;j<Nseg;j++){
-	    (*bound)->segp[j]=0;
-	    (*bound)->segarea[j]=0.0;
-	    (*bound)->localsegarea[j]=0.0;
-	    (*bound)->boundary_Q[j]=0.0;
-	    for(n=0;n<NT;n++){
-		(*bound)->boundary_Q_t[n][j]=0.0;
-	    }
-	}
-    }
-    if(myproc==0) printf("Finished Zeroing Type2 boundary arrays...\n");
+  (*bound)->time = (REAL *)SunMalloc(Nt*sizeof(REAL),"AllocateBoundaryData");
+  (*bound)->z = (REAL *)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
 
-    if((*bound)->hasType3>0){
-	for(j=0;j<Ntype3;j++){
-	    (*bound)->cellp[j]=0;
-	    (*bound)->xv[j]=0.0;
-	    (*bound)->yv[j]=0.0;
+  // Zero the boundary arrays
+  if(myproc==0) printf("Zeroing boundary arrays...\n");
 
-	    (*bound)->h[j]=0.0;
-	    for(n=0;n<NT;n++){
-		 (*bound)->h_t[n][j]=0.0;
-	    }
-	    for(k=0;k<Nk;k++){
-		(*bound)->uc[k][j]=0.0;
-		(*bound)->vc[k][j]=0.0;
-		(*bound)->wc[k][j]=0.0;
-		(*bound)->T[k][j]=0.0;
-		(*bound)->S[k][j]=0.0;
-		for(n=0;n<NT;n++){
-		    (*bound)->uc_t[n][k][j]=0.0;
-		    (*bound)->vc_t[n][k][j]=0.0;
-		    (*bound)->wc_t[n][k][j]=0.0;
-		    (*bound)->T_t[n][k][j]=0.0;
-		    (*bound)->S_t[n][k][j]=0.0;
-		}
-	    }
-	}
-	for(i=0;i<n3;i++){
-	    (*bound)->ind3[i]=-1;
-	}
-	for(i=0;i<n3e;i++){
-          (*bound)->ind3edge[i]=-1;
+  for(j=0;j<(*bound)->Nt;j++){
+    (*bound)->time[j]=0.0;
+  }
+  (*bound)->t0=-1;
+  (*bound)->t1=-1;
+  (*bound)->t2=-1;
+  for(k=0;k<(*bound)->Nk;k++){
+    (*bound)->z[k]=0.0;
+  }
+  
+  if((*bound)->hasType2>0){
+    for(j=0;j<Ntype2;j++){
+      (*bound)->edgep[j]=0;
+      (*bound)->localedgep[j]=-1;
+      (*bound)->xe[j]=0.0;
+      (*bound)->ye[j]=0.0;
+      for(k=0;k<Nk;k++){
+        (*bound)->boundary_u[k][j]=0.0;
+        (*bound)->boundary_v[k][j]=0.0;
+        (*bound)->boundary_w[k][j]=0.0;
+        (*bound)->boundary_T[k][j]=0.0;
+        (*bound)->boundary_S[k][j]=0.0;
+        for(n=0;n>NT;n++){
+          (*bound)->boundary_u_t[n][k][j]=0.0;
+          (*bound)->boundary_v_t[n][k][j]=0.0;
+          (*bound)->boundary_w_t[n][k][j]=0.0;
+          (*bound)->boundary_T_t[n][k][j]=0.0;
+          (*bound)->boundary_S_t[n][k][j]=0.0;
         }
+      }
     }
-    if(myproc==0) printf("Finished Zeroing Type 3 boundary arrays...\n");
- } //End function
+    for(i=0;i<n2;i++){
+      (*bound)->ind2[i]=-1;
+    }
+  }
+  
+  if((*bound)->hasSeg>0){
+    for(j=0;j<Ntype2;j++){
+      (*bound)->segedgep[j]=0;
+    }
+    for(j=0;j<Nseg;j++){
+      (*bound)->segp[j]=0;
+      (*bound)->segarea[j]=0.0;
+      (*bound)->localsegarea[j]=0.0;
+      (*bound)->boundary_Q[j]=0.0;
+      for(n=0;n<NT;n++){
+        (*bound)->boundary_Q_t[n][j]=0.0;
+      }
+    }
+  }
+  if(myproc==0) printf("Finished Zeroing Type2 boundary arrays...\n");
+  
+  if((*bound)->hasType3>0){
+    for(j=0;j<Ntype3;j++){
+      (*bound)->cellp[j]=0;
+      (*bound)->xv[j]=0.0;
+      (*bound)->yv[j]=0.0;
+      
+      (*bound)->h[j]=0.0;
+      for(n=0;n<NT;n++){
+        (*bound)->h_t[n][j]=0.0;
+      }
+      for(k=0;k<Nk;k++){
+        (*bound)->uc[k][j]=0.0;
+        (*bound)->vc[k][j]=0.0;
+        (*bound)->wc[k][j]=0.0;
+        (*bound)->T[k][j]=0.0;
+        (*bound)->S[k][j]=0.0;
+        for(n=0;n<NT;n++){
+          (*bound)->uc_t[n][k][j]=0.0;
+          (*bound)->vc_t[n][k][j]=0.0;
+          (*bound)->wc_t[n][k][j]=0.0;
+          (*bound)->T_t[n][k][j]=0.0;
+          (*bound)->S_t[n][k][j]=0.0;
+        }
+      }
+    }
+    for(i=0;i<n3;i++){
+      (*bound)->ind3[i]=-1;
+    }
+    for(i=0;i<n3e;i++){
+      (*bound)->ind3edge[i]=-1;
+    }
+  }
+  if(myproc==0) printf("Finished Zeroing Type 3 boundary arrays...\n");
+} //End function
 
 
 /*

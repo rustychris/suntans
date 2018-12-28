@@ -12,6 +12,7 @@
  */
 #include "phys.h"
 #include "sources.h"
+#include "boundaries.h"
 #include "memory.h"
 #include "sendrecv.h"
 
@@ -82,7 +83,8 @@ void MomentumSource(REAL **usource, gridT *grid, physT *phys, propT *prop) {
  * Usage: SaltSource(A,B,grid,phys,prop,met)
  *
 */
-void SaltSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT *met) {
+void SaltSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT *met,
+                int myproc, MPI_Comm comm) {
     int i, iptr, k, ktop, gc;
     if(prop->metmodel>0 && prop->metmodel < 4){	
 	    REAL L_w, EP, dztop, dzmin_saltflux;
@@ -114,7 +116,9 @@ void SaltSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
 	  for(k=0;k<grid->Nk[i];k++)
 	    A[i][k]=B[i][k]=0;
    }
+    PointSourceSalt(A,B,grid,phys,prop,myproc,comm);
 }
+
 /*
  * Function: HeatSource
  * Usage: HeatSource(A,B,grid,phys,prop);
@@ -513,6 +517,9 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
       }
     }
  }// End if
+
+ // separately add on any explicit point sources
+ PointSourceTemp(A,B,grid,phys,prop,myproc,comm);
 } // End Heatsource
 
 /*

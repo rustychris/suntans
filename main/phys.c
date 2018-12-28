@@ -1231,6 +1231,8 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
 
       // apply continuity via Eqn 82
       Continuity(phys->wnew,grid,phys,prop);
+      // point sources update wnew
+      PointSourcesContinuity(phys->wnew,grid,phys,prop,myproc,comm);
       ISendRecvWData(phys->wnew,grid,myproc,comm);
 
       // Before EddyViscosity (which invokes UpdateScalars), figure out the global
@@ -1256,7 +1258,7 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       }
 
       // Update the temperature only if gamma is nonzero in suntans.dat
-       if(prop->gamma) {
+      if(prop->gamma) {
         t0=Timer();
 
 	getTsurf(grid,phys); // Find the surface temperature
@@ -1300,22 +1302,18 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       // Update the salinity only if beta is nonzero in suntans.dat
       if(prop->beta) {
         t0=Timer();
-        if(prop->metmodel>0){
-          SaltSource(phys->wtmp,phys->uold,grid,phys,prop,met);
-          UpdateScalars(grid,phys,prop,phys->wnew,phys->s,phys->boundary_s,phys->Cn_R,
-                        prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,
-                        phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,1,prop->TVDsalt,1);
-        }else{
+        // RH: old code conditionally called SaltSource, but now point sources
+        // are in there, so always call it.
+        SaltSource(phys->wtmp,phys->uold,grid,phys,prop,met,myproc,comm);
 #ifdef DBG_PROC
-          if(DBG_PROC==myproc) printf("UpdateScalars for salt\n");
+        if(DBG_PROC==myproc) printf("UpdateScalars for salt\n");
 #endif
-          UpdateScalars(grid,phys,prop,phys->wnew,phys->s,phys->boundary_s,phys->Cn_R,
-                        prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,
-                        NULL,NULL,NULL,NULL,0,0,comm,myproc,1,prop->TVDsalt,1);
+        UpdateScalars(grid,phys,prop,phys->wnew,phys->s,phys->boundary_s,phys->Cn_R,
+                      prop->kappa_s,prop->kappa_sH,phys->kappa_tv,prop->theta,
+                      phys->uold,phys->wtmp,NULL,NULL,0,0,comm,myproc,1,prop->TVDsalt,1);
 #ifdef DBG_PROC
-          if(DBG_PROC==myproc) printf("UpdateScalars for salt returns\n");
+        if(DBG_PROC==myproc) printf("UpdateScalars for salt returns\n");
 #endif
-        }
         ISendRecvCellData3D(phys->s,grid,myproc,comm);
 
 	if(prop->metmodel>0){
@@ -3482,6 +3480,8 @@ static void UPredictor(gridT *grid, physT *phys,
 #endif
 
 
+  PointSources(grid,phys,prop,myproc,comm);
+  
   // Now update the vertical grid spacing with the new free surface.
   // can comment this out to linearize the free surface
   // this will update dzf, etop, saving previous values to dzfold, etopold
@@ -4318,7 +4318,6 @@ static void GSSolve(gridT *grid, physT *phys, propT *prop, int myproc, int numpr
  *
  */
 void Continuity(REAL **w, gridT *grid, physT *phys, propT *prop)
-//static void Continuity(REAL **w, gridT *grid, physT *phys, propT *prop)
 {
   int i, k, nf, iptr, ne, nc1, nc2, j, jptr;
   REAL ap, am, dzfnew, theta=prop->theta;

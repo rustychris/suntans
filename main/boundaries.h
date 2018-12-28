@@ -31,6 +31,7 @@ typedef struct _boundT{
   // Dimension sizes
   size_t Ntype2;
   size_t Ntype3;
+  size_t Npoint_source;
   size_t Nseg;
   size_t Nt;
   size_t Nk;
@@ -46,11 +47,14 @@ typedef struct _boundT{
   int *cellp;
   int *segedgep;
   int *segp;
+  int *point_cell;
+  int *point_layer;
 
   // Indices that point the grid to the cell in the file
   int *ind2;
   int *ind3;
   int *ind3edge;
+  int *ind_point;
 
   // Boundary coordinates
   REAL *xe;
@@ -98,6 +102,11 @@ typedef struct _boundT{
   REAL **boundary_S;
   REAL *boundary_Q;
 
+  // Point sources
+  REAL *point_Q;
+  REAL *point_T;
+  REAL *point_S;
+  
   // Type-3 (cell centred) boundaries
   REAL ***uc_t;
   REAL ***vc_t;
@@ -137,6 +146,10 @@ void OpenBoundaryFluxes(REAL **q, REAL **ub, REAL **ubn, gridT *grid, physT *phy
                         int myproc);
 void BoundaryVelocities(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void BoundaryScalars(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
+void PointSources(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
+void PointSourcesContinuity(REAL **w, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
+void PointSourceTemp(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
+void PointSourceSalt(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void WindStress(gridT *grid, physT *phys, propT *prop, metT *met, int myproc);
 void InitBoundaryData(propT *prop, gridT *grid, int myproc, MPI_Comm comm);
 void BoundarySediment(gridT *grid, physT *phys, propT *prop);
