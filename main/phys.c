@@ -758,7 +758,7 @@ void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
     }
   }
 
-  // for now, no special handling with edge-based depths.
+  // test to see if need local adjustment
   for(j=0;j<grid->Ne;j++) {
     nc1=grid->grad[2*j];
     nc2=grid->grad[2*j+1];
@@ -766,13 +766,35 @@ void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
     if(nc1<0) nc1=nc2;
     // a lower bound on freesurface height, to determine
     // when a high CdB is needed
+#ifdef BUFFERHEIGHT
     // This is a very bad approximation to having a proper
     // weir equation.
     h=Min(phys->h[nc1],phys->h[nc2]) + grid->de[j];
-    
     if(h<BUFFERHEIGHT) {
       phys->CdB[j]=100;
     }
+#endif
+#ifdef WEIR_GRADIENT
+    // Another bastardization of the weir equation --
+    // calculate fs gradient:
+    // this only kicks in when the freesurface gradient is
+    // above the WEIR_GRADIENT threshold. It is not a guarantee
+    // of stability, but can help significantly.
+    h=fabs((phys->h[nc1]-phys->h[nc2]))/ grid->dg[j];
+    
+    if(h>WEIR_GRADIENT) {
+      // a drag coefficient that would would create a steady state
+      // flow similar to what we'd get with a weir.
+      // this comes from rearranging a weir equation:
+      // Q=2/3 Cd sqrt(2*g) B H^(3/2)
+      // Cd: constant about 0.65, B:width, H: dzf (weir crest to upstream eta)
+      h=(9./8.)/(0.65*0.65)*h;
+      if (h>phys->CdB[j]) {
+        phys->CdB[j]=h;
+        printf("Drag set for weir CdB[j=%d]=%f\n",j,phys->CdB[j]);
+      }
+    }
+#endif
   }
 }
 

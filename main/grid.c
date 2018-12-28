@@ -179,6 +179,7 @@ void GetGrid(gridT **localgrid, int myproc, int numprocs, MPI_Comm comm)
   //   maingrid->vwgt
   if(myproc==0 && VERBOSE>0) printf("Getting the depth for graph weights...\n");
   GetDepth(maingrid,myproc,numprocs,comm);
+  InitializeEdgeDepths(maingrid,myproc,comm,GLOBAL_GRID);
 
   // functions to set up parallelization of the code and compute geometrical 
   // information needed for grid computations
@@ -396,7 +397,8 @@ void InitMainGrid(gridT **grid, int Np, int Ne, int Nc, int myproc)
 
   // Depth at Voronoi points
   (*grid)->dv = (REAL *)SunMalloc((*grid)->Nc*sizeof(REAL),"InitMainGrid");
-  // Depth at edges allocated later, in InitializeEdgeDepth
+  // Depth at edges
+  (*grid)->de = (REAL *)SunMalloc((*grid)->Ne*sizeof(REAL),"InitMainGrid");
   
   // Weights for partitioning cell graph
   (*grid)->vwgt = (int *)SunMalloc((*grid)->Nc*sizeof(int),"InitMainGrid");
@@ -441,7 +443,9 @@ void GetDepth(gridT *grid, int myproc, int numprocs, MPI_Comm comm)
 
   dz = (REAL *)SunMalloc(Nkmax*sizeof(REAL),"GetDepth");
 
-  maxdepth=0.0;
+  // these are positive-down quantities, with maxdepth deepest
+  // and mindepth shallowest
+  maxdepth=-INFTY; // RH: a step towards datum-agnostic depths.
   mindepth=INFTY;
   IntDepth=(int)MPI_GetValue(DATAFILE,"IntDepth","GetDepth",myproc);
   minimum_depth=(REAL)MPI_GetValue(DATAFILE,"minimum_depth","GetDepth",myproc);
@@ -474,7 +478,9 @@ void GetDepth(gridT *grid, int myproc, int numprocs, MPI_Comm comm)
       maxdepth = grid->dv[n];
   maxdepth0 = maxdepth;
 
-  
+  // this is not datum-agnostic, and implicitly assumes that the top
+  // is at 0.0.  should fix, but that also requires bringing in 
+  // code to specify vertical spacing.
   GetDZ(dz,maxdepth,maxdepth,Nkmax,myproc);
 
   //  if(!stairstep && fixdzz)
@@ -1438,7 +1444,7 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
         dmin=maingrid->dv[i];
     }
     dz0 = dmax/(REAL)(maingrid->Nkmax);
-
+    
     // for the case where shallowest point cannot be resolved
     if(dmin < dz0 && vertgridcorrect) {
       dz0 = dmin;
@@ -1446,14 +1452,14 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
         printf("Warning!\n");
         printf("Not enough vertical grid points to resolve the most shallow cell!\n");
         printf("Changing maximum number of vertical cells from %d to %d\n",
-            maingrid->Nkmax,(int)(dmax/dz0));
+               maingrid->Nkmax,(int)(dmax/dz0));
       }
       // fix this so that we can resolve the shallowest part of the domain
       maingrid->Nkmax = 1+(int)(dmax/dz0);
     }
     // allocate memory for size of vertical cells
     maingrid->dz = (REAL *)SunMalloc(maingrid->Nkmax*sizeof(REAL),"VertGrid");
-
+    
     // get vertical grid spacing from initialization file
     GetDZ(maingrid->dz,dmax,dmax,maingrid->Nkmax,myproc);
     dmaxtest=0;
@@ -1474,7 +1480,7 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
   MPI_Bcast((void *)maingrid->dz,maingrid->Nkmax,MPI_DOUBLE,0,comm);
   MPI_Bcast(&dz0,1,MPI_DOUBLE,0,comm);
   MPI_Bcast(&dmax,1,MPI_DOUBLE,0,comm);
-
+  
   (*localgrid)->Nkmax = maingrid->Nkmax;
   (*localgrid)->dz = (REAL *)SunMalloc((*localgrid)->Nkmax*sizeof(REAL),"VertGrid");
   // transfer grid spacing from global grid on proc to local grid on proc
@@ -1492,23 +1498,14 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
   (*localgrid)->Nke = (int *)SunMalloc((*localgrid)->Ne*sizeof(int),"VertGrid");
   (*localgrid)->Nkc = (int *)SunMalloc((*localgrid)->Ne*sizeof(int),"VertGrid");
   (*localgrid)->Nkp = (int *)SunMalloc((*localgrid)->Np*sizeof(int),"VertGrid");
-
+  
   // for each local cell set number of layers (3D problem)
   if((*localgrid)->Nkmax>1) {
-    for(i=0;i<(*localgrid)->Nc;i++) 
-      if((*localgrid)->dv[i]==dmax) 
-        (*localgrid)->Nk[i] = (*localgrid)->Nkmax;
-      else {
-        dmaxtest=0;
-        for(k=0;k<(*localgrid)->Nkmax;k++) {
-          // add up the cumulative cell depth until it exceeds the actual depth
-          dmaxtest+=(*localgrid)->dz[k];
-          (*localgrid)->Nk[i] = k+1;
-          if(dmaxtest>=(*localgrid)->dv[i]) 
-            break;
-        }
-      }
-    // for each global cell set number of layeres (similarly)
+    // RH: this used to loop over local cells, then do the same
+    // for global cells. less confusing to do it once for global cells,
+    // and then copy global to local.
+    
+    // for each global cell set number of layers 
     for(i=0;i<maingrid->Nc;i++) 
       if(maingrid->dv[i]==dmax) 
         maingrid->Nk[i] = maingrid->Nkmax;
@@ -1521,15 +1518,36 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
             break;
         }
       }
+    
+    for(i=0;i<(*localgrid)->Nc;i++) {
+      // RH bad loop body. REMOVE once the test below passes
+      if((*localgrid)->dv[i]==dmax) 
+        (*localgrid)->Nk[i] = (*localgrid)->Nkmax;
+      else {
+        dmaxtest=0;
+        for(k=0;k<(*localgrid)->Nkmax;k++) {
+          // add up the cumulative cell depth until it exceeds the actual depth
+          dmaxtest+=(*localgrid)->dz[k];
+          (*localgrid)->Nk[i] = k+1;
+          if(dmaxtest>=(*localgrid)->dv[i]) 
+            break;
+        }
+      }
+      // RH: testing before dropping the above loop.
+      if ( (*localgrid)->Nk[i] != maingrid->Nk[(*localgrid)->mnptr[i]] ) {
+        printf("WHOA - those should have been equal but they're not\n");
+        exit(1);
+      }
+    }
   } 
   // 2D problem
   else {
-    for(i=0;i<(*localgrid)->Nc;i++)
-      (*localgrid)->Nk[i] = (*localgrid)->Nkmax;
     for(i=0;i<maingrid->Nc;i++)
       maingrid->Nk[i] = maingrid->Nkmax;
+    for(i=0;i<(*localgrid)->Nc;i++)
+      (*localgrid)->Nk[i] = (*localgrid)->Nkmax;
   }
-
+  
   // initialize ctop, dztop
   for(i=0;i<(*localgrid)->Nc;i++) {
     (*localgrid)->ctop[i] = 0;
@@ -1554,7 +1572,7 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
 
   // over all the local grid edges 
   for(j=0;j<(*localgrid)->Ne;j++) {
-    // get clogal grid pointers
+    // get global grid pointers
     ne = (*localgrid)->eptr[j];
     // if the neighboring cell is a ghost cell
     if(maingrid->grad[2*ne]==-1) {
@@ -1590,6 +1608,30 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
         (*localgrid)->Nke[j]=maingrid->Nk[maingrid->grad[2*ne]];
         (*localgrid)->Nkc[j]=maingrid->Nk[maingrid->grad[2*ne]];
       }
+    }
+  }
+
+  // Use edge depths to decrease Nke in 3D problem
+  // Shy approach to incorporating de -- just adding this in as
+  // a postprocessing step to avoid changing too much code and
+  // to make sure that de only decreases the number of layers
+  // at an edge
+  if( (*localgrid)->Nkmax>1 ) {
+    for(j=0;j<(*localgrid)->Ne;j++) {
+      if((*localgrid)->de[j]==dmax) {
+        ne = (*localgrid)->Nkmax;
+      } else {
+        // use ne to calculate a new Nke based on de
+        dmaxtest=0;
+        for(k=0;k<(*localgrid)->Nkmax;k++) {
+          dmaxtest+=(*localgrid)->dz[k];
+          ne=k+1;
+          if(dmaxtest>=(*localgrid)->de[j]) 
+            break;
+        }
+      }
+      if( ne<(*localgrid)->Nke[j] )
+        (*localgrid)->Nke[j]=ne;
     }
   }
 
@@ -2800,7 +2842,7 @@ static void TransferData(gridT *maingrid, gridT **localgrid, int myproc)
           (*localgrid)->xv[k]=maingrid->xv[j];
           (*localgrid)->nfaces[k]=maingrid->nfaces[j]; //added part
           (*localgrid)->yv[k]=maingrid->yv[j];
-          (	*localgrid)->dv[k]=maingrid->dv[j];
+          (*localgrid)->dv[k]=maingrid->dv[j];
           (*localgrid)->vwgt[k]=maingrid->vwgt[j];
           // for each face connect cell pointer with pointers to 
           // points that make up a cell (not edges)
@@ -2861,6 +2903,9 @@ static void TransferData(gridT *maingrid, gridT **localgrid, int myproc)
       "TransferData");
   (*localgrid)->gradf = (int *)SunMalloc(2*(*localgrid)->Ne*sizeof(int),
       "TransferData");
+  (*localgrid)->de = (REAL *)SunMalloc((*localgrid)->Ne*sizeof(REAL),
+      "TransferData");
+
   // populate maingrid->leptr, localgrid->eptr, localgrid->edges 
   // initialize all edge flags to 0
   for(j=0;j<maingrid->Ne;j++) 
@@ -2890,6 +2935,8 @@ static void TransferData(gridT *maingrid, gridT **localgrid, int myproc)
         (*localgrid)->eptr[k]=iface;
         //edge_id array
         (*localgrid)->edge_id[k]=maingrid->edge_id[iface];
+        //edge depth - RH 
+        (*localgrid)->de[k]=maingrid->de[iface];
         k++;
       }
     }
@@ -3505,16 +3552,15 @@ static void Geometry(gridT *maingrid, gridT **grid, int myproc)
     ty = ty/tmag;
     //corrected part to make we can calculate xe and ye when grad[2n]==1
     if((*grid)->grad[2*n]>=0){
-    xdott = ((*grid)->xv[(*grid)->grad[2*n]]-maingrid->xp[p1])*tx+
-      ((*grid)->yv[(*grid)->grad[2*n]]-maingrid->yp[p1])*ty;
-    (*grid)->xe[n] = maingrid->xp[p1]+xdott*tx;
-    (*grid)->ye[n] = maingrid->yp[p1]+xdott*ty;
-    }
-    else{
-    xdott = ((*grid)->xv[(*grid)->grad[2*n+1]]-maingrid->xp[p1])*tx+
-      ((*grid)->yv[(*grid)->grad[2*n+1]]-maingrid->yp[p1])*ty;
-    (*grid)->xe[n] = maingrid->xp[p1]+xdott*tx;
-    (*grid)->ye[n] = maingrid->yp[p1]+xdott*ty;
+      xdott = ((*grid)->xv[(*grid)->grad[2*n]]-maingrid->xp[p1])*tx+
+        ((*grid)->yv[(*grid)->grad[2*n]]-maingrid->yp[p1])*ty;
+      (*grid)->xe[n] = maingrid->xp[p1]+xdott*tx;
+      (*grid)->ye[n] = maingrid->yp[p1]+xdott*ty;
+    } else {
+      xdott = ((*grid)->xv[(*grid)->grad[2*n+1]]-maingrid->xp[p1])*tx+
+        ((*grid)->yv[(*grid)->grad[2*n+1]]-maingrid->yp[p1])*ty;
+      (*grid)->xe[n] = maingrid->xp[p1]+xdott*tx;
+      (*grid)->ye[n] = maingrid->yp[p1]+xdott*ty;
     }
     
     // This is the midpoint of the edge and is not used.
@@ -3540,14 +3586,13 @@ static void Geometry(gridT *maingrid, gridT **grid, int myproc)
       (*grid)->n1[n] = (*grid)->n1[n]/(*grid)->dg[n];
       (*grid)->n2[n] = (*grid)->n2[n]/(*grid)->dg[n];
       if(((*grid)->xv[(*grid)->grad[2*n]]==
-            (*grid)->xv[(*grid)->grad[2*n+1]]) &&
-          ((*grid)->yv[(*grid)->grad[2*n]]==
-           (*grid)->yv[(*grid)->grad[2*n+1]])) {
+          (*grid)->xv[(*grid)->grad[2*n+1]]) &&
+         ((*grid)->yv[(*grid)->grad[2*n]]==
+          (*grid)->yv[(*grid)->grad[2*n+1]])) {
         printf("Coincident Voronoi points on edge %d (%d,%d)!\n",n,
-            (*grid)->grad[2*n],(*grid)->grad[2*n+1]);
+               (*grid)->grad[2*n],(*grid)->grad[2*n+1]);
       }
-    }
-    else {
+    } else {
       xc = (*grid)->xe[n];
       yc = (*grid)->ye[n];
       // one neighboring cell is a ghost cell
@@ -3603,63 +3648,58 @@ static void Geometry(gridT *maingrid, gridT **grid, int myproc)
       */
     }
   }
-    /*
-    for(nf=0;nf<NFACES;nf++) {
-      xt[nf]=maingrid->xp[(*grid)->cells[n*NFACES+nf]];
-      yt[nf]=maingrid->yp[(*grid)->cells[n*NFACES+nf]];
-    }
-    // Radius of the circumcircle
-    R0 = GetCircumcircleRadius(xt,yt,NFACES);
-    for(nf=0;nf<NFACES;nf++) {
-      (*grid)->def[n*NFACES+nf]=sqrt(R0*R0-pow((*grid)->df[(*grid)->face[n*NFACES+nf]]/2,2));
-      if(IsNan((*grid)->def[n*NFACES+nf]) || (*grid)->def[n*NFACES+nf]==0) {
-        printf("Corrected at x=%f\n",(*grid)->xv[n]);
-        (*grid)->def[n*NFACES+nf]=(*grid)->dg[(*grid)->face[n*NFACES+nf]]/2;
-      }
-    }
-  }
-    */
 
   //###########################################################
   // End of original code
   // ##########################################################
 
+  // RH: pretty sure this code is incorrect, but it also appears that xi is
+  // not used anywhere.  commenting out for now, to REMOVE after testing
+
   /* Now compute the coefficients that make up the tangents to compute advection */
-  if(myproc==0 && VERBOSE>2) printf("\t\tComputing xi coefficients...\n");
-  // initialixe xi to 0 over all edges and faces
-  for(n=0;n<Ne;n++) {
-    grad1=(*grid)->grad[2*n];
-    grad2=(*grid)->grad[2*n+1];
-    enei=(*grid)->nfaces[grad1]+(*grid)->nfaces[grad2]-2;
-    for(nf=0;nf<enei;nf++) {
-      (*grid)->xi[2*((*grid)->maxfaces-1)*n+nf]=0;
-    }
-    // for each edge
-    for(n=0;n<Ne;n++) {
-      if((*grid)->n1[n]!=0 && (*grid)->n2[n]!=0) {
-        for(nf=0;nf<2;nf++) {
-          j = (*grid)->eneigh[2*((*grid)->maxfaces-1)*n+2*nf];
-          k = (*grid)->eneigh[2*((*grid)->maxfaces-1)*n+2*nf+1];
-          if(k!=-1 && j!=-1) {
-            den = sqrt(pow((*grid)->n1[k]*(*grid)->n1[n]+
-                  (*grid)->n2[k]*(*grid)->n2[n],2)-
-                2.0*((*grid)->n1[j]*(*grid)->n1[n]+
-                  (*grid)->n2[j]*(*grid)->n2[n])*
-                ((*grid)->n1[j]*(*grid)->n1[k]+
-                 (*grid)->n2[j]*(*grid)->n2[k])*
-                ((*grid)->n1[k]*(*grid)->n1[n]+
-                 (*grid)->n2[k]*(*grid)->n2[n])+
-                pow((*grid)->n1[j]*(*grid)->n1[n]+
-                  (*grid)->n2[j]*(*grid)->n2[n],2));
-            (*grid)->xi[2*((*grid)->maxfaces-1)*n+2*nf]=
-              ((*grid)->n1[k]*(*grid)->n1[n]+(*grid)->n2[k]*(*grid)->n2[n])/den;
-            (*grid)->xi[2*((*grid)->maxfaces-1)*n+2*nf+1]=
-              -((*grid)->n1[j]*(*grid)->n1[n]+(*grid)->n2[j]*(*grid)->n2[n])/den;
-          }
-        }
-      }
-    }
-  }
+  
+  // if(myproc==0 && VERBOSE>2) printf("\t\tComputing xi coefficients...\n");
+  // // initialixe xi to 0 over all edges and faces
+  // for(n=0;n<Ne;n++) {
+  //   grad1=(*grid)->grad[2*n];
+  //   grad2=(*grid)->grad[2*n+1];
+  //   // RH: grad2 may be -1.  Not clear to me why we don't just zero all of xi
+  //   // at least avoids invalid reads
+  //   enei=(*grid)->nfaces[grad1];
+  //   if(grad2>=0) {
+  //     // include the faces of grad2, but now we've counted the common
+  //     // face of grad1 and grad2 twice, so decrement by 2
+  //     enei+=(*grid)->nfaces[grad2]-2; // valgrind!
+  //   }
+  //   for(nf=0;nf<enei;nf++) {
+  //     (*grid)->xi[2*((*grid)->maxfaces-1)*n+nf]=0;
+  //   }
+  //   // for each edge
+  //   for(n=0;n<Ne;n++) {
+  //     if((*grid)->n1[n]!=0 && (*grid)->n2[n]!=0) {
+  //       for(nf=0;nf<2;nf++) {
+  //         j = (*grid)->eneigh[2*((*grid)->maxfaces-1)*n+2*nf];
+  //         k = (*grid)->eneigh[2*((*grid)->maxfaces-1)*n+2*nf+1];
+  //         if(k!=-1 && j!=-1) {
+  //           den = sqrt(pow((*grid)->n1[k]*(*grid)->n1[n]+
+  //                          (*grid)->n2[k]*(*grid)->n2[n],2)-
+  //                      2.0*((*grid)->n1[j]*(*grid)->n1[n]+
+  //                           (*grid)->n2[j]*(*grid)->n2[n])*
+  //                      ((*grid)->n1[j]*(*grid)->n1[k]+
+  //                       (*grid)->n2[j]*(*grid)->n2[k])*
+  //                      ((*grid)->n1[k]*(*grid)->n1[n]+
+  //                       (*grid)->n2[k]*(*grid)->n2[n])+
+  //                      pow((*grid)->n1[j]*(*grid)->n1[n]+
+  //                          (*grid)->n2[j]*(*grid)->n2[n],2));
+  //           (*grid)->xi[2*((*grid)->maxfaces-1)*n+2*nf]=
+  //             ((*grid)->n1[k]*(*grid)->n1[n]+(*grid)->n2[k]*(*grid)->n2[n])/den;
+  //           (*grid)->xi[2*((*grid)->maxfaces-1)*n+2*nf+1]=
+  //             -((*grid)->n1[j]*(*grid)->n1[n]+(*grid)->n2[j]*(*grid)->n2[n])/den;
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
 }
 
 /*

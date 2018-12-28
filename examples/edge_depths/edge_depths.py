@@ -1,3 +1,8 @@
+"""
+Development and testing of independently-specified
+edge depths
+"""
+
 from stompy.grid import unstructured_grid
 import numpy as np
 from stompy.model.delft import dflow_model
@@ -22,37 +27,35 @@ n2=g.select_nodes_nearest([300,500])
 edges=g.shortest_path( n1,n2, return_type='edges' )
 # sloping weir, initially totally dry, will overtop
 # during run
-g.edges['edge_depth'][edges]= np.linspace(-1,-3.75,len(edges))
-
+# test both signs of the edge depth
+g.edges['edge_depth'][edges]= np.linspace(-2,2,len(edges))
 
 model=sun_driver.SuntansModel()
+model.use_edge_depths=True
 model.load_template('sun-template.dat')
 model.set_grid(g)
 
-inflow=sun_driver.FlowBC(name='inflow',geom=np.array([ [0,0],[0,100]]),
+inflow=sun_driver.FlowBC(name='inflow',
+                         geom=np.array([ [0,0],[0,100]]),
                          Q=50.0)
 model.add_bcs(inflow)
 
 model.set_run_dir('rundata', mode='pristine')
 model.run_start=np.datetime64("2018-01-01 00:00")
-model.run_stop =np.datetime64("2018-01-02 00:00")
+model.run_stop =np.datetime64("2018-01-01 20:00")
 model.projection='EPSG:26910'
+model.sun_bin_dir="/home/rusty/src/suntans/main"
 
 model.config['dt']=30
 model.config['Cmax']=30
-
-model.sun_bin_dir="/home/rusty/src/suntans/main"
 model.config['Nkmax']=1
 model.config['stairstep']=0
 
 model.write()
 
-model.ic_ds.eta.values[:]=-4
+model.ic_ds.eta.values[:]=-2.1
 model.write_ic_ds()
 
 model.partition()
 model.run_simulation()
 
-
-# j=2866 seems to be getting significant velocity even though it should be dry.
-# c=1394 is the upstream cell

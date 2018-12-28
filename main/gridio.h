@@ -19,7 +19,8 @@ void ReadGrid(gridT **grid, int myproc, int numprocs, MPI_Comm comm);
 void OutputGridData(gridT *maingrid, gridT *grid, int myproc, int numprocs);
 void ReadGridFileNames(int myproc);
 void ReadDepth(gridT *grid, int myproc);
-void InitializeEdgeDepths(gridT *grid, int myproc, MPI_Comm comm);
+void InitializeEdgeDepths(gridT *grid, int myproc, MPI_Comm comm, grid_type_t grid_type);
+void WriteEdgeDepths(gridT *grid,int myproc, grid_type_t grid_type);
 void ReadMainGrid(gridT *grid, int myproc);
 
 #endif

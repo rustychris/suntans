@@ -120,6 +120,8 @@ void ReadGrid(gridT **grid, int myproc, int numprocs, MPI_Comm comm)
   (*grid)->n2 = (REAL *)SunMalloc((*grid)->Ne*sizeof(REAL),"ReadGrid");
   (*grid)->xe = (REAL *)SunMalloc((*grid)->Ne*sizeof(REAL),"ReadGrid");
   (*grid)->ye = (REAL *)SunMalloc((*grid)->Ne*sizeof(REAL),"ReadGrid");
+  
+  (*grid)->de = (REAL *)SunMalloc((*grid)->Ne*sizeof(REAL),"ReadGrid");
 
   (*grid)->Nke = (int *)SunMalloc((*grid)->Ne*sizeof(int),"ReadGrid");
   (*grid)->Nkc = (int *)SunMalloc((*grid)->Ne*sizeof(int),"ReadGrid");
@@ -179,20 +181,56 @@ void ReadGrid(gridT **grid, int myproc, int numprocs, MPI_Comm comm)
     (*grid)->etop[n]=0;
 }
 
+// RH: write out edge depths, either global or local grid
+void WriteEdgeDepths(gridT *grid,int myproc, grid_type_t grid_type) {
+  int j;
+  char str[BUFFERLENGTH];
+  FILE *ofile;
+
+  // If the file exists, read it.  No setting in suntans.dat
+  // may need to change this based on grid_type, and read a per-domain
+  // edge depth file when grid_type==LOCAL_GRID
+  if(grid_type==GLOBAL_GRID){
+    sprintf(str,"%s-edge",INPUTDEPTHFILE);
+  } else {
+    sprintf(str,"%s-edge.%d",INPUTDEPTHFILE,myproc);
+  }
+
+  if(VERBOSE>0) printf("Writing edge depths to %s...\n",str);
+
+  ofile = fopen(str,"wt");
+  if( ofile==NULL ) {
+    printf("Failed to open %s\n",str);
+    MPI_Finalize();
+    exit(EXIT_FAILURE);  
+  }
+
+  // this is only going to work for global edge indices
+  for(j=0;j<grid->Ne;j++) {
+    fprintf(ofile,"%f %f %f\n", grid->xe[j],grid->ye[j],grid->de[j]);
+  }
+  
+  fclose(ofile);
+}
+
 // RH InitializeEdgeDepths
 // populate grid->de[].  This must be done after ReadGrid and AllocateTransferArrays,
 // since edge depths may be chosen from cell depths, and for marker 6 edges that
 // requires some interprocessor communication.
-void InitializeEdgeDepths(gridT *grid,int myproc,MPI_Comm comm) {
+void InitializeEdgeDepths(gridT *grid,int myproc,MPI_Comm comm,grid_type_t grid_type) {
   int n,nc1,nc2;
   char str[BUFFERLENGTH];
   FILE *ifile;
   REAL temp;
 
-  grid->de = (REAL*)SunMalloc(grid->Ne*sizeof(REAL),"InitializeEdgeDepths");
-
   // If the file exists, read it.  No setting in suntans.dat
-  sprintf(str,"%s-edge",INPUTDEPTHFILE);
+  // may need to change this based on grid_type, and read a per-domain
+  // edge depth file when grid_type==LOCAL_GRID
+  if(grid_type==GLOBAL_GRID){
+    sprintf(str,"%s-edge",INPUTDEPTHFILE);
+  } else {
+    sprintf(str,"%s-edge.%d",INPUTDEPTHFILE,myproc);
+  }
 
   if(VERBOSE>0) printf("Trying to read edge depths from %s...\n",str);
 
@@ -206,6 +244,7 @@ void InitializeEdgeDepths(gridT *grid,int myproc,MPI_Comm comm) {
       temp=getfield(ifile,str); // Y
       grid->de[n] = getfield(ifile,str);
     }
+    fclose(ifile);
   } else {
     if(VERBOSE>0) printf("%s did not exist, will pull from cells...\n",str);
 
@@ -225,21 +264,18 @@ void InitializeEdgeDepths(gridT *grid,int myproc,MPI_Comm comm) {
       // now nc1 refers to the shallower watercolumn.
 
       grid->de[n] = grid->dv[nc1];
-
-      // in this case, we should make sure that Nke is consistent with Nk -
-      // some of the grid postprocessing for edge-based depths updates Nke and Nkc, but
-      // if we're missing edgedepths then Nke will be inconsistent with the depth taken
-      // from the neighboring cell
-      if( (grid->Nke[n] != grid->Nk[nc1]) && (grid->mark[n]!=6 ) ) {
-        printf("[p=%d] Nke[j=%d]=%d inconsistent with cell neighbor Nk[i=%d]=%d\n",
-               myproc,
-               n,grid->Nke[n],nc1,grid->Nk[nc1]);
-        MPI_Finalize();
-        exit(1);
-      }
+      // dropped a check on Nke, because de is now going to be used to get Nke
+      // these is still some room for checking on things, in case the partitioning
+      // had edge depths, but somehow now we don't.
     }
-    // get depths for marker 6 edges from other processor:
-    ISendRecvEdgeData2D(grid->de, grid, myproc, comm);
+    // in the original version of this we'd read in per-processor edge depths
+    // and then have to send them around.  the forward-port shouldn't need to
+    // do that. once dust settles, this can be removed.
+    if(grid_type==LOCAL_GRID) {
+      printf("DEPRECATED code in InitializeEdgeDepths\n");
+      // get depths for marker 6 edges from other processor:
+      ISendRecvEdgeData2D(grid->de, grid, myproc, comm);
+    }
   }
 }
 
@@ -378,6 +414,9 @@ void OutputGridData(gridT *maingrid, gridT *grid, int myproc, int numprocs)
   sprintf(str,"%s.%d",EDGECENTEREDFILE,myproc);
   if(VERBOSE>2) printf("Outputting %s...\n",str);
   WriteEdgeCenteredData(str,grid,myproc);
+
+  // RH - write per-processor edge depths
+  WriteEdgeDepths(grid,myproc,LOCAL_GRID);
 
   sprintf(str,"%s.%d",NODEFILE,myproc);
   if(VERBOSE>2) printf("Outputting %s...\n",str);

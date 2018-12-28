@@ -44,7 +44,10 @@
 
 // Edge (or is it cell?) with depth less than this get a very high drag
 // coefficient (100)
-#define BUFFERHEIGHT 1e-2
+// #define BUFFERHEIGHT 1e-2
+// alternatively, employ a gross weir when d eta/dx exceeds this
+#define WEIR_GRADIENT 1e-2
+
 #define DEFAULT_NFACES 3
 
 // enable low-level output for a particular model element

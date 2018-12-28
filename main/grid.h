@@ -156,6 +156,7 @@ typedef enum _boundaryselection{
   NODE
 } boundaryselection;
 
+typedef enum _grid_type_t {GLOBAL_GRID,LOCAL_GRID} grid_type_t;
 
 /*
  * Public function declarations.
