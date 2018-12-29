@@ -791,7 +791,7 @@ void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
       h=(9./8.)/(0.65*0.65)*h;
       if (h>phys->CdB[j]) {
         phys->CdB[j]=h;
-        printf("Drag set for weir CdB[j=%d]=%f\n",j,phys->CdB[j]);
+        // printf("Drag set for weir CdB[j=%d]=%f\n",j,phys->CdB[j]);
       }
     }
 #endif
