@@ -35,6 +35,8 @@ model.use_edge_depths=True
 model.load_template('sun-template.dat')
 model.set_grid(g)
 
+model.num_procs=4
+
 inflow=sun_driver.FlowBC(name='inflow',
                          geom=np.array([ [0,0],[0,100]]),
                          Q=50.0)
@@ -46,9 +48,12 @@ model.run_stop =np.datetime64("2018-01-01 20:00")
 model.projection='EPSG:26910'
 model.sun_bin_dir="/home/rusty/src/suntans/main"
 
-model.config['dt']=30
+# for 2D, dt=30 is okay.
+# for 3D, start getting some CmaxW, so scale it back.
+#     10 or 15 would probably be okay. 30 is unstable.
+model.config['dt']=5
 model.config['Cmax']=30
-model.config['Nkmax']=1
+model.config['Nkmax']=10
 model.config['stairstep']=0
 
 model.write()

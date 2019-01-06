@@ -20,7 +20,9 @@ n1=g.select_nodes_nearest([300,0])
 n2=g.select_nodes_nearest([300,500])
 
 edges=g.shortest_path( n1,n2, return_type='edges' )
-g.edges['edge_depth'][edges]=-1
+# sloping weir, initially totally dry, will overtop
+# during run
+g.edges['edge_depth'][edges]= np.linspace(-1,-3.75,len(edges))
 
 
 model=sun_driver.SuntansModel()
@@ -35,15 +37,17 @@ model.set_run_dir('rundata', mode='pristine')
 model.run_start=np.datetime64("2018-01-01 00:00")
 model.run_stop =np.datetime64("2018-01-01 06:00")
 model.projection='EPSG:26910'
+model.sun_bin_dir="/home/rusty/src/suntans/main"
 
+model.config['dt']=30
+model.config['Cmax']=30
 model.config['Nkmax']=50
 model.config['stairstep']=0
+
 model.write()
 
 model.ic_ds.eta.values[:]=-4
 model.write_ic_ds()
-
-model.sun_bin_dir="/home/rusty/src/suntans/main"
 
 model.partition()
 model.run_simulation()
