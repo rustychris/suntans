@@ -3383,7 +3383,7 @@ static void UPredictor(gridT *grid, physT *phys,
   // So far we have U*** and D.  Now we need to create h* in htmp.   This
   // will comprise the source term for the free-surface solver.  Before we
   // do this we need to set the new velocity at the open boundary faces and
-  // place them into utmp.  
+  // place them into utmp.
   BoundaryVelocities(grid,phys,prop,myproc,comm);
   OpenBoundaryFluxes(NULL,phys->utmp,NULL,grid,phys,prop,myproc);
 
@@ -4928,7 +4928,8 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option) {
             z=0.0;
           }
         } else {
-          // does this ever happen?  
+          // does this ever happen?
+          // this is happening on hor_snubby... FIX
           printf("Setting dzf[j=%d][k=%d]=0, which seems very bad\n",j,k);
           exit(1);
           grid->dzf[j][k] = 0.0; // why would we want to do that?  big problem.

@@ -1,6 +1,6 @@
 """
 Development and testing of point sources, i.e. discharge
-located at bed
+located at bed.
 """
 
 from stompy.grid import unstructured_grid
@@ -12,9 +12,9 @@ import six
 six.moves.reload_module(dflow_model)
 six.moves.reload_module(sun_driver)
 
+# Create square grid
 g=unstructured_grid.UnstructuredGrid(max_sides=4)
-
-ret=g.add_rectilinear([0,0],[500,500],50,50)
+g.add_rectilinear([0,0],[500,500],50,50)
 
 g.add_cell_field('depth',-10*np.ones(g.Ncells()))
 
@@ -27,7 +27,18 @@ model.set_grid(g)
 
 source=dfm.SourceSinkBC(name='inflow',geom=np.array([200,200]),
                         z=-10,Q=1.0)
+
 model.add_bcs(source)
+# HERE - this doesn't feel like a reasonable way to handle
+# scalars at source/sinks. it's not enough, though, to just specify
+# concentration at a location, because there could be multiple sources
+# mapping to the same cell/layer.
+# in that sense, it would be better to do something like this, but then
+# change flow bcs to do the same.  I guess it is the difference between
+# adding and setting?  It's going to get ugly -- back off and just
+# set the concentrations, but at least allow reusing the source info.
+model.add_bcs( [source.scalar_bc(salt=0),
+                source.scalar_bc(temperature=4)] )
 
 model.set_run_dir('rundata', mode='pristine')
 model.run_start=np.datetime64("2018-01-01 00:00")
@@ -48,39 +59,6 @@ model.ic_ds.eta.values[:]=-0.5
 model.ic_ds.salt.values[:]=1.0
 model.ic_ds.temp.values[:]=1.0
 model.write_ic_ds()
-
-#
-
-# manually write the point source
-Npoint=0
-point_cell=[]
-point_layer=[]
-point_Q=[]
-point_S=[]
-point_T=[]
-Nt=model.bc_ds.dims['Nt']
-
-for key in model.bc_point_sources.keys():
-    (c,k)=key
-    print("Point source for cell=%d, k=%d"%(c,k))
-    assert 'Q' in model.bc_point_sources[key]
-
-    # this will be handled by combine_items
-    das=model.bc_point_sources[key]['Q']
-    assert len(das)==1
-    da=das[0]
-    
-    # when moving this into the core code, can re-use the
-    # time-handling utilities there.
-    # this is interp_time(...)
-    assert 'time' not in da.dims,"wait for that"
-    data=da.values * np.ones( (Nt,)+da.values.shape )
-    point_cell.append(c)
-    point_layer.append(k)
-    point_Q.append(data) 
-    print("punting on point source salinity and temp")
-    point_S.append(0*np.ones_like(data))
-    point_T.append(4*np.ones_like(data))
 
 bc_ds=model.bc_ds
 bc_ds['point_cell']=('Npoint',), point_cell

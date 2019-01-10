@@ -75,8 +75,10 @@ void PointSources(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm co
   REAL Q;
   
   for(i=0;i<bound->Npoint_source;i++) {
+    i_src=bound->ind_point[i];
+    if(i_src<0) continue;
+    
     Q=bound->point_Q[i];
-    i_src=bound->point_cell[i];
     phys->h[i_src] += prop->dt*Q / grid->Ac[i_src];
   }
 }
@@ -89,9 +91,15 @@ void PointSourcesContinuity(REAL **w, gridT *grid, physT *phys, propT *prop, int
   REAL Q;
 
   for(i=0;i<bound->Npoint_source;i++) {
-    Q=bound->point_Q[i];
-    i_src=bound->point_cell[i];
+    i_src=bound->ind_point[i];
+    if(i_src<0) continue;
+    
     k_src=bound->point_layer[i];
+    
+    Q=bound->point_Q[i];
+
+    // printf("[p=%d] point_source %d, i=%d  k=%d\n",
+    //        myproc,i,i_src,k_src);
     
     for(k=k_src;k>=grid->ctop[i_src];k--) {
       w[i_src][k] += Q/grid->Ac[i_src];
@@ -112,11 +120,13 @@ void PointSourceScalar(REAL *scalar,REAL **A, REAL **B, gridT *grid, physT *phys
   //    and has units of 1/time.
   //  - src2 is added to the rhs. is has units of concentration/time
   for(i=0;i<bound->Npoint_source;i++) {
-    i_src=bound->point_cell[i];
+    i_src=bound->ind_point[i];
+    if(i_src<0) continue;
+    
     k_src=bound->point_layer[i];
     Q_src=bound->point_Q[i];
-    printf("Updating scalar: A[i=%d][k=%d] += scal=%.2f\n",
-           i_src,k_src,scalar[i]);
+    //printf("Updating scalar: A[i=%d][k=%d] += scal=%.2f\n",
+    //       i_src,k_src,scalar[i]);
     A[i_src][k_src] += scalar[i]*Q_src/(grid->Ac[i_src]*grid->dzzold[i_src][k_src]);
   }
 }
@@ -488,33 +498,41 @@ void InitBoundaryData(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
   * Update the boundary netcdf data and temporally interpolate onto the model time step
   *
   */     
- void UpdateBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
-     int n, j, k, t0, t1, t2; 
-     REAL dt, r1, r2, mu;
-   
-     t1 = getTimeRecBnd(prop->nctime,bound->time,bound->Nt);
-     t0=t1-1;
-     t2=t1+1;
-
-     /* Only update the boundary data if need to*/
-     if (bound->t1!=t1){
-	if(VERBOSE>3 && myproc==0) printf("Updating netcdf boundary data at nc timestep: %d\n",t1);
-	/* Read in the data two time steps*/
-	bound->t1=t1;
-	bound->t2=t2;
-	bound->t0=t0;
-        //printf("myproc: %d, bound->t0: %d, nctime: %f, rtime: %f \n",myproc,bound->t0, prop->nctime, prop->rtime);
-	ReadBdyNC(prop, grid, myproc,comm);
-	//Try this to avoid parallel read errors
-	/*
-	for(n=0;n<64;n++){
-	    MPI_Barrier(comm);
-	    if(n==myproc)
-		ReadBdyNC(prop, grid, myproc);
-	}
-	*/
+void UpdateBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
+  int n, j, k, t0, t1, t2; 
+  REAL dt, r1, r2, mu;
+  if(VERBOSE>2) {
+    printf("[p=%d] top of UpdateBdyNC\n",myproc);
+  }
+  
+  t1 = getTimeRecBnd(prop->nctime,bound->time,bound->Nt);
+  t0=t1-1;
+  t2=t1+1;
+  
+  /* Only update the boundary data if need to*/
+  if (bound->t1!=t1){
+    if(VERBOSE>3 && myproc==0) printf("Updating netcdf boundary data at nc timestep: %d\n",t1);
+    /* Read in the data two time steps*/
+    bound->t1=t1;
+    bound->t2=t2;
+    bound->t0=t0;
+    //printf("myproc: %d, bound->t0: %d, nctime: %f, rtime: %f \n",myproc,bound->t0, prop->nctime, prop->rtime);
+    ReadBdyNC(prop, grid, myproc,comm);
+    //Try this to avoid parallel read errors
+    /*
+      for(n=0;n<64;n++){
+      MPI_Barrier(comm);
+      if(n==myproc)
+      ReadBdyNC(prop, grid, myproc);
       }
+    */
+  }
 
+    
+  if(VERBOSE>2) {
+    printf("[p=%d] UpdateBdyNC post ReadBdyNC\n",myproc);
+  }
+  
    /*Linear temporal interpolation coefficients*/
     //dt = bound->time[bound->t1]-bound->time[bound->t0];
     //r2 = (prop->nctime - bound->time[bound->t0])/dt;
@@ -557,6 +575,11 @@ void InitBoundaryData(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
 	  bound->h[j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->h_t[0][j],bound->h_t[1][j],bound->h_t[2][j]);
 	}
     }
+
+    if(VERBOSE>2) {
+      printf("[p=%d] UpdateBdyNC post hasType3\n",myproc);
+    }
+    
    // printf("Updating flux (Q) boundaries on proc %d\n",myproc);
     // Interpolate Q and find the velocities based on the (dynamic) segment area
     if(bound->hasType2 && bound->hasSeg>0){
@@ -567,7 +590,10 @@ void InitBoundaryData(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
 	// This function does the actual conversion
 	FluxtoUV(prop,grid,myproc,comm);
     }
-    //printf("Finished updatiing boundaries on %d\n",myproc);
+    
+    if(VERBOSE>2) {
+      printf("[p=%d] Finished UpdateBdyNC\n",myproc);
+    }
 
  }//End function
 
@@ -725,10 +751,10 @@ static void MatchBndPoints(propT *prop, gridT *grid, int myproc){
     //printf("Type 3 : Processor = %d, jptr = %d, cellp[jptr]=%d, bound->ind3[ii]=%d\n",myproc,jptr,grid->cellp[jptr],bound->ind3[ii]);
   }
 
-
   if(myproc==0) printf("Matching point source cells...\n");
-  for(ii=0;ii<grid->Nc;ii++) {
-    for(jj=0;jj<bound->Npoint_source;jj++){
+  for(jj=0;jj<bound->Npoint_source;jj++){
+    bound->ind_point[jj]=-1; // if this point is on a different proc, ind_point remains -1
+    for(ii=0;ii<grid->Nc;ii++) {
       if(grid->mnptr[ii]==bound->point_cell[jj]){
         bound->ind_point[jj]=ii;
         printf("Matched point source %d (cell=%d) to proc=%d cell=%d\n",

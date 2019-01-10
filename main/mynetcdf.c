@@ -4723,6 +4723,7 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
        printf("myproc: %d, bound->t0: %d, nctime: %f\n",myproc,bound->t0, prop->nctime);
     }
     t0 = bound->t0;
+    t1 = bound->t1;
 
     count[0]=NT;
     count[1]=Nk;
@@ -4815,31 +4816,35 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
        count2[0]=1; // no quadratic interpolation
        start2[0]=t1; // just read the middle time step
 
+       if(VERBOSE>2) {
+         printf("[p=%d] Reading %ld point source at time index %d\n",myproc,bound->Npoint_source,t1);
+       }
+       
        vname="point_Q";
        if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundary netcdf file...\n",vname);
        if ((retval = nc_inq_varid(ncid, vname, &varid)))
-         ERR(retval);
+         ERRM(retval,"looking up point_Q");
        if ((retval = nc_get_vara_double(ncid, varid, start2, count2, bound->point_Q)))
-         ERR(retval); 
+         ERRM(retval,"reading point_Q"); 
        // nc_read_2D(ncid, vname, start2, count2, (REAL**)bound->point_Q, myproc);
             
        vname="point_T";
        if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundary netcdf file...\n",vname);
        if ((retval = nc_inq_varid(ncid, vname, &varid)))
-         ERR(retval);
+         ERRM(retval,"looking up point_T");
        if ((retval = nc_get_vara_double(ncid, varid, start2, count2, bound->point_T)))
-         ERR(retval); 
+         ERRM(retval,"reading point_T"); 
        //nc_read_2D(ncid, vname, start2, count2, (REAL**)bound->point_T, myproc);
        printf("Read in temperature for first point source: %.2f\n",bound->point_T[0]);
        
        vname="point_S";
        if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundary netcdf file...\n",vname);
        if ((retval = nc_inq_varid(ncid, vname, &varid)))
-         ERR(retval);
+         ERRM(retval,"looking up point_S");
        if ((retval = nc_get_vara_double(ncid, varid, start2, count2, bound->point_S)))
-         ERR(retval); 
+         ERRM(retval,"reading point_S"); 
        //nc_read_2D(ncid, vname, start2, count2, (REAL**)bound->point_S, myproc);
-
+       printf("Read in salt for first point source: %.2f\n",bound->point_S[0]);
      }
 
    // Wait for all processors
