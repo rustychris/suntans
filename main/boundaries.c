@@ -94,12 +94,15 @@ void PointSourcesContinuity(REAL **w, gridT *grid, physT *phys, propT *prop, int
     i_src=bound->ind_point[i];
     if(i_src<0) continue;
     
-    k_src=bound->point_layer[i];
     
     Q=bound->point_Q[i];
 
-    // printf("[p=%d] point_source %d, i=%d  k=%d\n",
-    //        myproc,i,i_src,k_src);
+    k_src=bound->point_layer[i];
+    // Clamp to available layers
+    if(k_src>grid->Nk[i_src]-1)
+      k_src=grid->Nk[i_src]-1;
+    else if(k_src<grid->ctop[i_src])
+      k_src=grid->ctop[i_src];
     
     for(k=k_src;k>=grid->ctop[i_src];k--) {
       w[i_src][k] += Q/grid->Ac[i_src];
@@ -124,6 +127,12 @@ void PointSourceScalar(REAL *scalar,REAL **A, REAL **B, gridT *grid, physT *phys
     if(i_src<0) continue;
     
     k_src=bound->point_layer[i];
+    // Clamp to available layers
+    if(k_src>grid->Nk[i_src]-1)
+      k_src=grid->Nk[i_src]-1;
+    else if(k_src<grid->ctop[i_src])
+      k_src=grid->ctop[i_src];
+    
     Q_src=bound->point_Q[i];
     //printf("Updating scalar: A[i=%d][k=%d] += scal=%.2f\n",
     //       i_src,k_src,scalar[i]);

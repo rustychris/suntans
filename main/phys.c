@@ -1201,6 +1201,11 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
 
     // Set nsteps<0 for debugging i/o without hydro/seds/etc...
     if(prop->nsteps>0) {
+#ifdef DBG_PROC
+      if(DBG_PROC==myproc) {
+        printf("[p=%d] Top of Solve loop, n=%d\n",myproc,n);
+      }
+#endif
 
       // Ramp down theta from 1 to the value specified in suntans.dat over
       // the time thetaramptime specified in suntans.dat to damp out transient
@@ -5367,7 +5372,9 @@ static void getTsurf(gridT *grid, physT *phys){
   //for(i=0;i<Nc;i++) {
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i = grid->cellp[iptr];
-    ktop = grid->ctop[i];
+    // in case dry.  Not sure phys->T[] will still be valid, but
+    // better than an illegal access.
+    ktop = Min(grid->ctop[i],grid->Nk[i]-1);
     phys->Tsurf[i] = phys->T[i][ktop];
   }
 }
@@ -5384,8 +5391,12 @@ static void getchangeT(gridT *grid, physT *phys){
   //for(i=0;i<Nc;i++) {
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i = grid->cellp[iptr];
+    // in case it's a dry cell. 
     ktop = grid->ctop[i];
-    phys->dT[i] = phys->T[i][ktop] - phys->Tsurf[i];
+    if ( ktop < grid->Nk[i] )
+      phys->dT[i] = phys->T[i][ktop] - phys->Tsurf[i];
+    else
+      phys->dT[i] = 0.0;
   }
 }
  /*

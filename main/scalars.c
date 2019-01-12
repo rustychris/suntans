@@ -67,7 +67,7 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
   } else
     fab=1.5;
 
-  for(i=0;i<Nc;i++) 
+  for(i=0;i<Nc;i++) {
     for(k=0;k<grid->Nk[i];k++)  {
       phys->stmp[i][k]=scal[i][k];
 #ifdef DBG_CELL
@@ -77,7 +77,8 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
       }
 #endif
     }
-
+  }
+  
   // Add on boundary fluxes, using stmp2 as the temporary storage
   // variable
   //for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
@@ -109,6 +110,11 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
   //for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i = grid->cellp[iptr];
+
+    // RH: skip dry cells.  Is this kosher? seems that some code assumes ctop<Nk,
+    // while other code allows ctop==Nk to indicate a dry cell.
+    if (grid->ctop[i]==grid->Nk[i]) continue;
+    
     Ac = grid->Ac[i];
 
     if(grid->ctop[i]>=grid->ctopold[i]) {
@@ -148,7 +154,7 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
     c[0]=-theta*dt*ap[ktop+1];
 
     // Bottom cell no-flux boundary condition for advection
-    b[(grid->Nk[i]-1)-ktop]+=c[(grid->Nk[i]-1)-ktop];
+    b[(grid->Nk[i]-1)-ktop]+=c[(grid->Nk[i]-1)-ktop]; // if ktop==ctop==Nk,
 
     // Implicit vertical diffusion terms
     for(k=ktop+1;k<grid->Nk[i];k++)
@@ -207,16 +213,39 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
       GetApAm(ap,am,phys->wp,phys->wm,phys->Cp,phys->Cm,phys->rp,phys->rm,
           phys->wtmp2,grid->dzzold,phys->stmp,i,grid->Nk[i],ktop,prop->dt,prop->TVD);
     }
-
+    
+#ifdef DBG_PROC
+    if(DBG_PROC==myproc) {
+      for(k=0;k<grid->Nk[i]-ktop;k++) {
+        assert( d[k]==d[k] );
+      }
+    }
+#endif
+    
     // Explicit advection and diffusion
-    for(k=ktop+1;k<grid->Nk[i]-1;k++) 
+    for(k=ktop+1;k<grid->Nk[i]-1;k++) {
+      // with k=12, am[k+1] is nan
+      // ap[k+1] is inf.
+      // ktop=4, Nk[i]==14,  traces back wtmp2[i][13] is inf.
       d[k-ktop]-=(1-theta)*dt*(am[k]*phys->stmp[i][k-1]+
-          (ap[k]-am[k+1])*phys->stmp[i][k]-
-          ap[k+1]*phys->stmp[i][k+1])-
+                               (ap[k]-am[k+1])*phys->stmp[i][k]- // THIS IS NAN
+                               ap[k+1]*phys->stmp[i][k+1])-  // THIS IS INF
         (1-theta)*dt*(bd[k]*phys->stmp[i][k-1]
-            -(bd[k]+bd[k+1])*phys->stmp[i][k]
-            +bd[k+1]*phys->stmp[i][k+1]);
-
+                      -(bd[k]+bd[k+1])*phys->stmp[i][k]
+                      +bd[k+1]*phys->stmp[i][k+1]);
+      if( d[k-ktop]!=d[k-ktop] ) {
+        printf("Hey ho\n"); // HERE
+      }
+    }
+    
+#ifdef DBG_PROC
+    if(DBG_PROC==myproc) {
+      for(k=0;k<grid->Nk[i]-ktop;k++) {
+        assert( d[k]==d[k] );
+      }
+    }
+#endif
+    
     if(ktop<grid->Nk[i]-1) {
       //Flux through bottom of top cell
       k=ktop;
@@ -235,6 +264,17 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
       if(Fbot) d[k-ktop]+=dt*(-1+alpha_bot+2*alpha_bot*bd[k])*Fbot[i];
     }
 
+#ifdef DBG_PROC
+    if(DBG_PROC==myproc) {
+      for(k=0;k<grid->Nk[i]-ktop;k++) {
+        if ( ! (d[k]==d[k]) ) {
+          printf("Heyo\n");// HERE!
+          assert( d[k]==d[k] );
+        }
+      }
+    }
+#endif
+    
     // First add on the source term from the previous time step.
     if(grid->ctop[i]<=grid->ctopold[i]) {
       for(k=grid->ctop[i];k<=grid->ctopold[i];k++) 
@@ -267,6 +307,14 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
         Cn[i][k]=0;
     }
 
+#ifdef DBG_PROC
+    if(DBG_PROC==myproc) {
+      for(k=0;k<grid->Nk[i]-ktop;k++) {
+        assert( d[k]==d[k] );
+      }
+    }
+#endif
+    
     // Now create the source term for the current time step
     for(k=0;k<grid->Nk[i];k++)
       ap[k]=0;
@@ -368,9 +416,11 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
 
 #ifdef DBG_CELL
     if(DBG_CELL==i && DBG_PROC==myproc) {
+      printf("[p=%d] ctopold[i=%d]=%d ctop=%d\n",
+             myproc,i,grid->ctopold[i],grid->ctop[i]);
       for(k=0;k<grid->Nk[i];k++) 
-        printf("[p=%d] end of UpdateScalars, scal[i=%d][k=%d]=%.3f\n",
-               myproc,i,k,scal[i][k]);
+        printf("[p=%d] end of UpdateScalars, scal[i=%d][k=%d]=%.3f  dzz=%.3f\n",
+               myproc,i,k,scal[i][k],grid->dzz[i][k]);
     }
 #endif
 

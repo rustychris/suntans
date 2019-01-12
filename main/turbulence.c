@@ -87,20 +87,14 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
       phys->wtmp[i][k]=2.0*fabs((prop->nu+nuT[i][k])*(pow(0.5*(dudz[k]+dudz[k+1]),2)+pow(0.5*(dvdz[k]+dvdz[k+1]),2))+
       				prop->grav*(prop->kappa_s+kappaT[i][k])*0.5*(drdz[k]+drdz[k+1]));
 #ifdef DBG_PROC
-      // problem is that kappaT is 0, and drdz is inf.
-      ASSERT_FINITE( 0.0*drdz[k] );
-      ASSERT_FINITE( kappaT[i][k]*drdz[k] );
-      ASSERT_FINITE( kappaT[i][k]*(drdz[k]+drdz[k+1]) );
       ASSERT_FINITE(phys->wtmp[i][k]);
 #endif 
     }
 
-    // kappaT will store the diffusion coefficient for q^2
-    for(k=grid->ctop[i];k<grid->Nk[i];k++) 
-      kappaT[i][k]=q[i][k]*l[i][k]*Sq;
-
-    // q will store q^2 and stmp3 will store the old value of q
     for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+      // kappaT will store the diffusion coefficient for q^2
+      // q will store q^2 and stmp3 will store the old value of q
+      kappaT[i][k]=q[i][k]*l[i][k]*Sq;
       phys->stmp3[i][k]=q[i][k];
       q[i][k]*=q[i][k];
     }
@@ -117,9 +111,15 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
       CdAvgB+=phys->CdB[ne]/3;
       tauAvgT+=fabs(phys->tau_T[ne])/3;
     }
-    phys->htmp[i]=pow(B1,2.0/3.0)*(CdAvgT*(pow(phys->uc[i][grid->ctop[i]],2)+pow(phys->vc[i][grid->ctop[i]],2))+
-				   tauAvgT);
-    phys->hold[i]=pow(B1,2.0/3.0)*CdAvgB*(pow(phys->uc[i][grid->Nk[i]-1],2)+pow(phys->vc[i][grid->Nk[i]-1],2));
+    if(grid->ctop[i]<grid->Nk[i]) {
+      // getting a read beyond uc here... because this cell is dry.
+      phys->htmp[i]=pow(B1,2.0/3.0)*(CdAvgT*(pow(phys->uc[i][grid->ctop[i]],2)+pow(phys->vc[i][grid->ctop[i]],2))+
+                                     tauAvgT);
+      phys->hold[i]=pow(B1,2.0/3.0)*CdAvgB*(pow(phys->uc[i][grid->Nk[i]-1],2)+pow(phys->vc[i][grid->Nk[i]-1],2));
+    } else {
+      // dry cell -- 
+      phys->htmp[i]=phys->hold[i]=0.0;
+    }
   }
   // Specify turbulence at boundaries for use in updatescalars.  Assume that all incoming turbulence is zero and let outgoing
   // turbulence flow outward.

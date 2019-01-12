@@ -166,7 +166,7 @@ int Check(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_C
 
       printf("Vertical Courant number problems:\n");
       printf("  Grid indices: i=%d k=%d (Nk=%d)\n", icw, kcw, grid->Nk[icw]);
-      printf("  Location: x=%.3e, y=%.3e, z=%.3e\n",grid->xv[icw],grid->yv[icw],DepthFromDZ(grid,phys,icw,kcw));
+      printf("  Location: x=%.6e, y=%.6e, z=%.3e\n",grid->xv[icw],grid->yv[icw],DepthFromDZ(grid,phys,icw,kcw));
       printf("  Free-surface height: %.3e\n",phys->h[icw]);
       printf("  Depth: %.3e\n",grid->dv[icw]);
       printf("  Wmax = %.3e %.3e (pos-up, above, below face)\n",phys->w[icw][kcw],phys->w[icw][kcw+1]);
@@ -180,7 +180,7 @@ int Check(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_C
     if(!wflag) {
       printf("Problem with W (W=NaN):\n");
       printf("  Grid indices: i=%d k=%d (Nkc=%d)\n", iw, kw, grid->Nkc[iw]);
-      printf("  Location: x=%.3e, y=%.3e, z=%.3e\n",grid->xv[iw],grid->yv[iw],DepthFromDZ(grid,phys,iw,kw));
+      printf("  Location: x=%.6e, y=%.6e, z=%.3e\n",grid->xv[iw],grid->yv[iw],DepthFromDZ(grid,phys,iw,kw));
     }
 
     if(!sflag) {
