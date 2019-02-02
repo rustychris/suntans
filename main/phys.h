@@ -180,6 +180,8 @@ typedef struct _physT {
   REAL **AT;
   REAL *bpr;
 
+  // Time step limitation counters
+  int *limiting_cell; // Nc
 } physT;
 
 /*

@@ -105,7 +105,7 @@ static REAL UFaceFlux(int j, int k, REAL **phi, REAL **u, gridT *grid, REAL dt,
     int method);
 static REAL HFaceFlux(int j, int k, REAL *phi, REAL **u, gridT *grid, REAL dt, 
     int method);
-void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option);
+void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option, int myproc);
 static void GetMomentumFaceValues(REAL **uface, REAL **ui, REAL **boundary_ui, REAL **U, gridT *grid, physT *phys, propT *prop, MPI_Comm comm, int myproc, int nonlinear);
 static void getTsurf(gridT *grid, physT *phys);
 static void getchangeT(gridT *grid, physT *phys);
@@ -147,7 +147,7 @@ void AllocatePhysicalVariables(gridT *grid, physT **phys, propT *prop)
   (*phys)->ut = (REAL **)SunMalloc(Ne*sizeof(REAL *),"AllocatePhysicalVariables");
   (*phys)->Cn_U = (REAL **)SunMalloc(Ne*sizeof(REAL *),"AllocatePhysicalVariables");
   (*phys)->Cn_U2 = (REAL **)SunMalloc(Ne*sizeof(REAL *),"AllocatePhysicalVariables"); //AB3
-
+  (*phys)->limiting_cell = (int *)SunMalloc(Nc*sizeof(int),"AllocatePhysicalVariables");
 
   // for each variable in plan consider the number of layers it affects
   for(j=0;j<Ne;j++) {
@@ -722,6 +722,12 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
       }
     }
   }
+
+  // tracking how often each cell is the most limiting for timestep
+  for(i=0;i<grid->Nc;i++) {
+    phys->limiting_cell[i]=0;
+  }
+  
   // Free the scratch array
   if (prop->readinitialnc>0)
       SunFree(ncscratch,Nki*Nci*sizeof(REAL),"InitializePhyiscalVariables");
@@ -1008,7 +1014,7 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
   // grid->etop and dzf are set in SetFluxHeight
   // RH: move this here so that dzz and dzf are kept consistent,
   // including etopold, dzfold as copied below
-  SetFluxHeight(grid,phys,prop,option);
+  SetFluxHeight(grid,phys,prop,option,myproc);
   
   // If this is an initial call set the old values to the new values.
   if(option) {
@@ -1391,8 +1397,13 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       } 
       t_nonhydro+=Timer()-t0;
 
-      // Send/recv the vertical velocity data 
+      // Send/recv the vertical velocity data
+      // RH: seems that w will only differ from wnew by nonhydrostatic calculation.
+      // still need w, since the momentum code uses it for advection.  This could
+      // be streamlined by only recalculating Continuity when nonhydrostatic, and
+      // otherwise just copy or alias w.  Another day.
       Continuity(phys->w,grid,phys,prop);
+      PointSourcesContinuity(phys->w,grid,phys,prop,myproc,comm);
       ISendRecvWData(phys->w,grid,myproc,comm);
 
       // Set scalar and wind stress boundary values at new time step n; 
@@ -1478,11 +1489,15 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
 static void StoreVariables(gridT *grid, physT *phys) {
   int i, j, k, iptr, jptr;
 
-  for(i=0;i<grid->Nc;i++) 
+  for(i=0;i<grid->Nc;i++) {
     for(k=0;k<grid->Nk[i];k++) {
       phys->stmp3[i][k]=phys->s[i][k];
       phys->wtmp2[i][k]=phys->w[i][k];
     }
+    // for consistency, copy the bed w, too, even though it
+    // it always 0.  
+    phys->wtmp2[i][grid->Nk[i]]=phys->w[i][grid->Nk[i]];
+  }
 
   for(j=0;j<grid->Ne;j++) {
     phys->D[j]=0;
@@ -3440,7 +3455,8 @@ static void UPredictor(gridT *grid, physT *phys,
       //phys->hcorr[i]=-grid->dv[i]+DRYCELLHEIGHT-phys->h[i];
       if(phys->h[i]<=-grid->dv[i]+CLAMPHEIGHT)
         phys->h[i]=-grid->dv[i]+CLAMPHEIGHT;
-      phys->s[i][grid->Nk[i]-1]=0;
+      // RH: better to leave any concentratino here alone.
+      // phys->s[i][grid->Nk[i]-1]=0;
     } else {
       phys->hcorr[i]=0;
       phys->active[i]=1;
@@ -4869,7 +4885,7 @@ void SetDensity(gridT *grid, physT *phys, propT *prop) {
  *  1: initialization, assume u is not set.
  *
  */
-void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option) {
+void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option,int myproc) {
   int i, j, k, nc1, nc2;
   REAL dz_bottom, dzsmall=grid->dzsmall;
   REAL z;
@@ -4934,9 +4950,12 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option) {
           }
         } else {
           // does this ever happen?
-          // this is happening on hor_snubby... FIX
-          printf("Setting dzf[j=%d][k=%d]=0, which seems very bad\n",j,k);
-          exit(1);
+          // this is happening on hor_snubby...
+          printf("[p=%d] Setting dzf[j=%d][k=%d]=0, which seems very bad\n",myproc,j,k);
+          printf("[p=%d]   -de[j]=%.4f  h[upwind i=%d]=%.4f\n",myproc,-grid->de[j],nc1,phys->h[nc1]);
+          printf("[p=%d]   etop[j]=%d  Nke[j]=%d ctop[i=%d]=%d\n",myproc,grid->etop[j],grid->Nke[j],
+                 nc1,grid->ctop[nc1]);
+          // exit(1); // harsh.  try to figure out more of what's going on.
           grid->dzf[j][k] = 0.0; // why would we want to do that?  big problem.
         }
       }

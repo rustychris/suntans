@@ -74,31 +74,54 @@ void CalculateSubsteps(gridT *grid, physT *phys, propT *prop, int myproc,
         for(kf = (k==ktop)? grid->etopold[j]:k ;
             kf <= k && kf < grid->Nke[j] ;
             kf ++ ) {
-
-            // Use the semi-implicit velocity, the one that is used for
-            // the actual flux in UpdateScalars
-            u_semi = (theta*phys->u[j][kf]+(1-theta)*phys->utmp2[j][kf]) * normal;
-            if ( u_semi > 0.0 ) {
-              // outward flow - include it
-              Qout += u_semi * grid->dzfold[j][kf] * grid->df[j];
-            }
-
+          
+          // Use the semi-implicit velocity, the one that is used for
+          // the actual flux in UpdateScalars
+          u_semi = (theta*phys->u[j][kf]+(1-theta)*phys->utmp2[j][kf]) * normal;
+          if ( u_semi > 0.0 ) {
+            // outward flow - include it
+            Qout += u_semi * grid->dzfold[j][kf] * grid->df[j];
+          }
+          
 #ifdef DBG_CELL
-            if( DBG_CELL==i && DBG_PROC==myproc ) {
-              printf("p=%d i=%d, for cell layer k=%d  outward u_semiimplicit[j=%d][kf=%d] = %.10f through dzfold=%.10f\n",
-                     myproc,i,k,j,kf,u_semi,grid->dzfold[j][kf]);
-            }
+          if( DBG_CELL==i && DBG_PROC==myproc ) {
+            printf("p=%d i=%d, for cell layer k=%d  outward u_semiimplicit[j=%d][kf=%d] = %.10f through dzfold=%.10f\n",
+                   myproc,i,k,j,kf,u_semi,grid->dzfold[j][kf]);
+          }
 #endif
         }
       }
 
+      // RH 2019-01-17: include vertical fluxes, too.
+      if (k>ktop ) {
+        // vertical velocity on top face, positive out
+        u_semi=theta*phys->wnew[i][k] + (1-theta)*phys->wtmp2[i][k];
+        if(u_semi>0.0) Qout += u_semi*grid->Ac[i];
+#ifdef DBG_CELL
+        if( DBG_CELL==i && DBG_PROC==myproc ) {
+          printf("p=%d i=%d, for cell layer k=%d   upward w_semiimplicit[i=%d][k=%d] = %.10f\n",
+                 myproc,i,k,i,k,u_semi);
+        }
+#endif // DBG_CELL
+      }
+      // vertical velocity on lower face.  here we can assume that
+      // the boundary is fixed, and use w without testing k<Nk[i]-1
+      u_semi=-( theta*phys->wnew[i][k+1] + (1-theta)*phys->wtmp2[i][k+1] );
+      if(u_semi>0.0) Qout += u_semi*grid->Ac[i];
+#ifdef DBG_CELL
+      if( DBG_CELL==i && DBG_PROC==myproc ) {
+        printf("p=%d i=%d, for cell layer k=%d downward w_semiimplicit[i=%d][k=%d] = %.10f\n",
+               myproc,i,k,i,k+1,u_semi);
+      }
+#endif // DBG_CELL
+      
 #ifdef DBG_CELL
       if( DBG_CELL==i && DBG_PROC==myproc ) {
         printf("p=%d i=%d  k=%d Qout=%.10f dzzold*Ac=%.10f\n",
                myproc,i,k,Qout,grid->dzzold[i][k]*grid->Ac[i]);
       }
 #endif
-
+      
       if ( Qout > 0.0 ) {
         // careful for dzzold of a bed cell when that watercolumn has been dried out.
         // UpdateDZ() should never zero out the bed dzz, so it should be okay (as long as
@@ -168,6 +191,10 @@ void CalculateSubsteps(gridT *grid, physT *phys, propT *prop, int myproc,
     fflush(prop->SubstepFID);
   }
 
+  if ( mine.proc==myproc ) {
+    phys->limiting_cell[mine.i]++;
+  }
+  
   if ( mine.nsubsteps > 0 )
     prop->nsubsteps = mine.nsubsteps;
   else

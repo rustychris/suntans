@@ -89,6 +89,7 @@ void PointSourcesContinuity(REAL **w, gridT *grid, physT *phys, propT *prop, int
   int i_src;
   int k_src;
   REAL Q;
+  REAL theta=prop->theta;
 
   for(i=0;i<bound->Npoint_source;i++) {
     i_src=bound->ind_point[i];
@@ -103,9 +104,24 @@ void PointSourcesContinuity(REAL **w, gridT *grid, physT *phys, propT *prop, int
       k_src=grid->Nk[i_src]-1;
     else if(k_src<grid->ctop[i_src])
       k_src=grid->ctop[i_src];
-    
+
+    // Theta here is tricky -
+    // Continuity is basically this:
+    // theta* (w[k]-w[k+1]) + (1-theta) (wtmp2[k]-wtmp2[k+1]) = 0
+    // plus horizontal fluxes.
+    // a mass balance over the time step with semi-implicit w.
+    // with point source, it should be
+    // theta* (w[k]-w[k+1]) + (1-theta) (wtmp2[k]-wtmp2[k+1]) - Q[k]/A= 0
+    // with Q centered on the [t,t+\Delta t] interval, while wtmp2 is at
+    // t and w is at t+\Delta t.
+    // un-rearranging:
+    // w[k]=w[k+1] - (1-theta)/theta * (wtmp2[k]-wtmp2[k+1]) + Q[k]/A/theta
+    // thus here we use 1/theta.
+    // it's a counter-intuitive, but it’s the same 1/theta factor that the
+    // horizontal fluxes get.
+
     for(k=k_src;k>=grid->ctop[i_src];k--) {
-      w[i_src][k] += Q/grid->Ac[i_src];
+      w[i_src][k] += Q/grid->Ac[i_src]/theta;
     }
   }
 }

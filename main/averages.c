@@ -20,7 +20,6 @@ void AllocateAverageVariables(gridT *grid, averageT **average, propT *prop)
 {
   int flag=0, i, j, jptr, ib, Nc=grid->Nc, Ne=grid->Ne, Np=grid->Np, nf, k;
 
-
   prop->avgctr=0;
   prop->avgtimectr=0;
   prop->avgfilectr=1*prop->ncfilectr;
@@ -113,8 +112,11 @@ void AllocateAverageVariables(gridT *grid, averageT **average, propT *prop)
  */
 void ZeroAverageVariables(gridT *grid, averageT *average, propT *prop){
 
-    int i,j,k,Nc=grid->Nc,Ne=grid->Ne;
+  int i,j,k,Nc=grid->Nc,Ne=grid->Ne;
 
+  // This used to be in the WriteAverage* functions, but makes more sense
+  // to have it here.
+  prop->avgctr=0;
   for(i=0;i<Nc;i++) {
     average->w[i][grid->Nk[i]]=0;
     for(k=0;k<grid->Nk[i];k++) {
@@ -173,13 +175,15 @@ void ZeroAverageVariables(gridT *grid, averageT *average, propT *prop){
  *
  */
 void UpdateAverageVariables(gridT *grid, averageT *average, physT *phys, metT *met, propT *prop,MPI_Comm comm, int myproc){
+  int i,iptr,j,jptr,k,Nc=grid->Nc,Ne=grid->Ne;
+  int nc1, nc2;
+  REAL flx,dz, sdz,Tdz,theta=prop->theta;
+  const REAL V0 = 1e6;
+  const REAL V0inv = 1.0/V0;
 
-    int i,iptr,j,jptr,k,Nc=grid->Nc,Ne=grid->Ne;
-    int nc1, nc2;
-    REAL flx,dz, sdz,Tdz,theta=prop->theta;
-    const REAL V0 = 1e6;
-    const REAL V0inv = 1.0/V0;
-
+  // This used to be at the top of WriteAverageNC
+  prop->avgctr++;
+  
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i = grid->cellp[iptr];
     average->w[i][grid->Nk[i]]+=phys->w[i][grid->Nk[i]];
@@ -359,18 +363,18 @@ void UpdateAverageScalars(gridT *grid, averageT *average, physT *phys, metT *met
  * Computes the average by dividing by the number averaging steps "ntaverage"
  * 
  */
-void ComputeAverageVariables(gridT *grid, averageT *average, physT *phys, metT *met, int ntaverage, propT *prop){
-
-    int i,j,k,Nc=grid->Nc,Ne=grid->Ne;
-    const REAL nt = 1.0/((REAL)ntaverage);
-    REAL nt3d;
-    const REAL V0 = 1e-6;
-
+void ComputeAverageVariables(gridT *grid, averageT *average, physT *phys, metT *met, int avgctr, propT *prop){
+  
+  int i,j,k,Nc=grid->Nc,Ne=grid->Ne;
+  const REAL nt = 1.0/((REAL)avgctr);
+  REAL nt3d;
+  const REAL V0 = 1e-6;
+  
   for(i=0;i<Nc;i++) {
     average->w[i][grid->Nk[i]]+=phys->w[i][grid->Nk[i]];
     for(k=0;k<grid->Nk[i];k++) {
       if(average->counter[i][k]>0){
-          nt3d = 1.0/(average->counter[i][k]);
+        nt3d = 1.0/(average->counter[i][k]);
       }else{
       	nt3d= 1.0;
       }
@@ -385,8 +389,8 @@ void ComputeAverageVariables(gridT *grid, averageT *average, physT *phys, metT *
       average->kappa_tv[i][k] *= nt3d;
 
       if(prop->calcage){
-	    average->agec[i][k] *= nt3d;
-	    average->agealpha[i][k] *= nt3d;
+        average->agec[i][k] *= nt3d;
+        average->agealpha[i][k] *= nt3d;
       }
     }
     // 2D cell-centred variables
@@ -412,13 +416,13 @@ void ComputeAverageVariables(gridT *grid, averageT *average, physT *phys, metT *
   }
 
   for(j=0;j<Ne;j++){
-      for(k=0;k<grid->Nke[j];k++){
-	  average->U_F[j][k] *= nt *V0;
-	  average->s_F[j][k] *= nt *V0;
-	  average->T_F[j][k] *= nt *V0;
-      }
+    for(k=0;k<grid->Nke[j];k++){
+      average->U_F[j][k] *= nt *V0;
+      average->s_F[j][k] *= nt *V0;
+      average->T_F[j][k] *= nt *V0;
+    }
   }
-
+  
 }//End of function
 
 /*
