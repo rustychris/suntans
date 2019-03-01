@@ -4856,7 +4856,7 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
        if ((retval = nc_get_vara_double(ncid, varid, start2, count2, bound->point_T)))
          ERRM(retval,"reading point_T"); 
        //nc_read_2D(ncid, vname, start2, count2, (REAL**)bound->point_T, myproc);
-       printf("Read in temperature for first point source: %.2f\n",bound->point_T[0]);
+       // printf("Read in temperature for first point source: %.2f\n",bound->point_T[0]);
        
        vname="point_S";
        if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundary netcdf file...\n",vname);
@@ -4865,7 +4865,7 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
        if ((retval = nc_get_vara_double(ncid, varid, start2, count2, bound->point_S)))
          ERRM(retval,"reading point_S"); 
        //nc_read_2D(ncid, vname, start2, count2, (REAL**)bound->point_S, myproc);
-       printf("Read in salt for first point source: %.2f\n",bound->point_S[0]);
+       // printf("Read in salt for first point source: %.2f\n",bound->point_S[0]);
      }
 
    // Wait for all processors
