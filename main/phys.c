@@ -148,6 +148,7 @@ void AllocatePhysicalVariables(gridT *grid, physT **phys, propT *prop)
   (*phys)->Cn_U = (REAL **)SunMalloc(Ne*sizeof(REAL *),"AllocatePhysicalVariables");
   (*phys)->Cn_U2 = (REAL **)SunMalloc(Ne*sizeof(REAL *),"AllocatePhysicalVariables"); //AB3
   (*phys)->limiting_cell = (int *)SunMalloc(Nc*sizeof(int),"AllocatePhysicalVariables");
+  (*phys)->min_time_step = (REAL *)SunMalloc(Nc*sizeof(REAL),"AllocatePhysicalVariables");
 
   // for each variable in plan consider the number of layers it affects
   for(j=0;j<Ne;j++) {
@@ -726,6 +727,8 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   // tracking how often each cell is the most limiting for timestep
   for(i=0;i<grid->Nc;i++) {
     phys->limiting_cell[i]=0;
+    // and what each cell's minimum time step has been
+    phys->min_time_step[i]=1e6;
   }
   
   // Free the scratch array

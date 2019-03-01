@@ -138,6 +138,9 @@ void CalculateSubsteps(gridT *grid, physT *phys, propT *prop, int myproc,
             mine.k = k;
             mine.dt_min = dt_min_i;
           }
+          if (dt_min_i < phys->min_time_step[i] ) {
+            phys->min_time_step[i]=dt_min_i;
+          }
         }
       } else if ( Qout < 0.0 ) {
         printf("p=%d: Qout[i=%d][k=%d] = %f  NEGATIVE!\n",myproc,i,k,Qout);

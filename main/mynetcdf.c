@@ -572,6 +572,11 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
       ERRM(retval,"limit_cell id");
     if ((retval = nc_put_vara_int(ncid, varid, starttwo, counttwo, phys->limiting_cell )))
       ERRM(retval,"limiting_cell");
+
+    if ((retval = nc_inq_varid(ncid, "min_time_step", &varid)))
+      ERRM(retval,"min_time_step");
+    if ((retval = nc_put_vara_double(ncid, varid, starttwo, counttwo, phys->min_time_step )))
+      ERRM(retval,"min_time_step");
     
     if ((retval = nc_inq_varid(ncid, "uc", &varid)))
       ERRM(retval,"uc id");
@@ -1973,6 +1978,15 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
       ERR(retval);
    nc_addattr(ncid, varid,"long_name","Cell fFrequency of CFL limit");
    nc_addattr(ncid, varid,"units","-");
+   nc_addattr(ncid, varid,"mesh","suntans_mesh");
+   nc_addattr(ncid, varid,"location","face");
+   nc_addattr(ncid, varid,"coordinates","time yv xv");
+
+   // minimum time step per cell
+   if ((retval = nc_def_var(ncid,"min_time_step",NC_DOUBLE,2,dimidtwo,&varid)))
+      ERR(retval);
+   nc_addattr(ncid, varid,"long_name","Minimum time step limitation");
+   nc_addattr(ncid, varid,"units","s");
    nc_addattr(ncid, varid,"mesh","suntans_mesh");
    nc_addattr(ncid, varid,"location","face");
    nc_addattr(ncid, varid,"coordinates","time yv xv");
