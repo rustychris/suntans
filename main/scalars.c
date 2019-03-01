@@ -87,6 +87,9 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
 
     for(k=grid->ctop[i];k<grid->Nk[i];k++)
       phys->stmp2[i][k]=0;
+    // Sets bed layer to zero even when it's dry.
+    // RH 2019-02-28: hadn't actually been setting anything.
+    phys->stmp2[i][grid->Nk[i]-1]=0;
   }
 
   if(boundary_scal) {
@@ -113,6 +116,7 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
 
     // RH: skip dry cells.  Is this kosher? seems that some code assumes ctop<Nk,
     // while other code allows ctop==Nk to indicate a dry cell.
+    // HERE - potentially remove this
     if (grid->ctop[i]==grid->Nk[i]) continue;
     
     Ac = grid->Ac[i];
@@ -126,6 +130,11 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
       for(k=grid->ctop[i];k<=grid->ctopold[i];k++) 
         dznew+=grid->dzz[i][k];      
     }
+    // RH: may have created a monster by allowing ctop to go to
+    // Nk[i].  In this case, the cell has wetted, but the above
+    // code puts ktop==Nk[i].  There should be a valid concentration
+    // left in the bottom of the cell. 
+    if (ktop==grid->Nk[i]) ktop=grid->Nk[i]-1;
 
     // These are the advective components of the tridiagonal
     // at the new time step.
@@ -408,7 +417,10 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
         scal[i][ktop]=0;
     }
 
-    for(k=0;k<grid->ctop[i];k++)
+    // RH: punting on zero concentration in newly wet cells.
+    // maybe avoiding zeroing the bed layer will help, but
+    // really if ctop==Nk, none of this will get run, right?
+    for(k=0;k<grid->ctop[i] && k<grid->Nk[i]-1 ;k++)
       scal[i][k]=0;
 
     for(k=grid->ctop[i];k<grid->ctopold[i];k++) 
