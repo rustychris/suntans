@@ -1196,6 +1196,20 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
     InitializeMerging(grid,prop->outputNetcdf,numprocs,myproc,comm);
   }
 
+  // RH write out initial condition for completeness and debugging
+  // Write to binary
+  prop->n=prop->nstart;
+  OutputPhysicalVariables(grid,phys,prop,myproc,numprocs,blowup,comm);
+  if (prop->outputNetcdf!=0){
+    // Output data to netcdf
+    if(prop->mergeArrays){
+      WriteOutputNCmerge(prop, grid, phys, met, blowup,numprocs,myproc,comm);
+    }else{
+      WriteOutputNC(prop, grid, phys, met, blowup, myproc);
+    }
+  }
+  // /RH
+  
   // main time loop
   for(n=prop->nstart+1;n<=prop->nsteps+prop->nstart;n++) {
 
