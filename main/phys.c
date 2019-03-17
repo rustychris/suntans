@@ -4945,7 +4945,7 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option,int myproc)
     // N.B. can start off negative
     z = phys->h[nc1] - (-grid->de[j]);
 
-    if ( z<0 ) {
+    if ( z<=0 ) {
       // Edge is dry.  All dzf already set to zero before main loop
       grid->etop[j]=grid->Nke[j];
     } else {
