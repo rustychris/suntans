@@ -81,7 +81,6 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
   
   // Add on boundary fluxes, using stmp2 as the temporary storage
   // variable
-  //for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i = grid->cellp[iptr];
 
@@ -110,7 +109,6 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
   if(prop->TVD && prop->horiTVD)
     HorizontalFaceScalars(grid,phys,prop,scal,boundary_scal,prop->TVD,comm,myproc); 
 
-  //for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i = grid->cellp[iptr];
 

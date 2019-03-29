@@ -1047,6 +1047,17 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
              myproc,i,k, grid->dzz[i][k], grid->dzzold[i][k]);
   }
 #endif
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+  if(myproc==DBG_PROC) {
+    j=DBG_EDGE;
+    printf("[p=%d j=%d] end of UpdateDZ, etop=%d  etopold=%d\n",
+           myproc,j,grid->etop[j], grid->etopold[j]);
+    for(k=0;k<grid->Nke[j];k++)
+      printf("[p=%d j=%d k=% 2d]   dzf=%.5f  dzfold=%.5f\n",
+             myproc,j,k, grid->dzf[j][k], grid->dzfold[j][k]);
+  }
+#endif
 }
 
 
@@ -2187,7 +2198,7 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
       for(k=k0;k<grid->Nk[nc2];k++) {
         printf("  [p=%d j=%d k=% 2d c=% 2d] delta Cn_U=%.9f   stmp=%.5f, stmp2=%.5f\n",
                myproc, j, k, nc2,
-               def2/dgf*prop->dt*(phys->stmp[nc2][k]*grid->n1[j]+phys->stmp2[nc2][k]*grid->n2[j]),
+               -def2/dgf*prop->dt*(phys->stmp[nc2][k]*grid->n1[j]+phys->stmp2[nc2][k]*grid->n2[j]),
                phys->stmp[nc2][k],phys->stmp2[nc2][k]);
       }
     }
@@ -4958,7 +4969,7 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option,int myproc)
     // N.B. can start off negative
     z = phys->h[nc1] - (-grid->de[j]);
 
-    if ( z<0 ) {
+    if ( z<=0 ) {
       // Edge is dry.  All dzf already set to zero before main loop
       grid->etop[j]=grid->Nke[j];
     } else {

@@ -36,7 +36,10 @@
 
 // merge top layer with next below when it is thinner 
 // than this
-#define DZMIN_SURFACE (20*DRYCELLHEIGHT)
+// Had been (20*DRYCELLHEIGHT)
+// with SFB grid, that was getting down to 2.4s time step limitation.
+// Changing this from 2cm to 5cm gives a similar increase in the min_time_step.
+#define DZMIN_SURFACE (0.05)
 
 // Cell with depth less than this will be propped up to
 // to this deep.  should be less than DRYCELLHEIGHT
