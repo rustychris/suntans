@@ -4121,10 +4121,14 @@ void WriteAverageNCmerge(propT *prop, gridT *grid, averageT *average, physT *phy
      
     // Zero the arrays after they have been written(don't do it for the initial step)
     if(prop->n>1+prop->nstart) {
-      printf("Zeroing average variables at prop->n=%d\n",prop->n);
+      if(myproc==0) {
+        printf("Zeroing average variables at prop->n=%d\n",prop->n);
+      }
       ZeroAverageVariables(grid,average,prop);
     } else {
-      printf("Skipping zeroing average variables at prop->n=%d\n",prop->n);
+      if(myproc==0) {
+        printf("Skipping zeroing average variables at prop->n=%d\n",prop->n);
+      }
     }
 
     /* Update the netcdf time index */
