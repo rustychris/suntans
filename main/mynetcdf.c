@@ -409,17 +409,20 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
    // Need to write the 3-D arrays as vectors
    //tmpvar = (REAL *)SunMalloc(grid->Nc*grid->Nkmax*sizeof(REAL),"WriteOutputNC");
    //tmpvarE = (REAL *)SunMalloc(grid->Ne*grid->Nkmax*sizeof(REAL),"WriteOutputNC");
-   
-   if(!(prop->n%prop->ntout) || prop->n==1+prop->nstart || blowup) {
+
+   // RH: this used to be prop->n==1+prop->nstart, but that misses
+   // the first output step.
+   if(!(prop->n%prop->ntout) || prop->n==prop->nstart || blowup) {
     
-    if(!(prop->nctimectr%prop->nstepsperncfile) || prop->n==1+prop->nstart){
-	if(prop->n > 1+prop->nstart){
-	    // Close the old netcdf file
-	    if(myproc==0){
-	    	printf("Closing opened output netcdf file...\n");
-		MPI_NCClose(prop->outputNetcdfFileID);
-	    }
-	}
+     // RH: same, used to be prop->n==1+prop->nstart
+     if( (prop->nctimectr>=prop->nstepsperncfile) || prop->n==prop->nstart){
+       if(prop->n > 1+prop->nstart){
+         // Close the old netcdf file
+         if(myproc==0){
+           printf("Closing opened output netcdf file...\n");
+           MPI_NCClose(prop->outputNetcdfFileID);
+         }
+       }
 
 	// Open the new netcdf file
 	MPI_GetFile(filename,DATAFILE,"outputNetcdfFile","WriteOutputNCmerge",myproc);
@@ -442,6 +445,12 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
 	prop->ncfilectr += 1;
 	startone[0] = prop->nctimectr;
     }
+     // DBG - can be removed.
+    //  else {
+    //    if(myproc==0) 
+    //      printf("Not opening output nc: prop->n=%d nstart=%d prop->ntout=%d nctimectr=%d nstepsperncfile=%d\n",
+    //             prop->n,prop->nstart,prop->ntout,prop->nctimectr,prop->nstepsperncfile);
+    //  }
     ncid = prop->outputNetcdfFileID;
 
     if(myproc==0 && VERBOSE>1){ 
@@ -452,16 +461,19 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
     }
     if(myproc==0){ 
 	/* Write the time data*/
-	if ((retval = nc_inq_varid(ncid, "time", &varid)))
-	    ERR(retval);
-	if ((retval = nc_put_vara_double(ncid, varid, startone, countone, time )))
-	    ERR(retval);
+      if ((retval = nc_inq_varid(ncid, "time", &varid))) {
+        printf("ncid: %d\n",ncid);
+        ERRM(retval,"nc_inq_varid('time'), proc 0");
+      }
+      if ((retval = nc_put_vara_double(ncid, varid, startone, countone, time )))
+        ERRM(retval,"proc 0, save time");
 
-	 countthree[2] = mergedGrid->Nc;
-	 counttwo[1] = mergedGrid->Nc;
-
+      countthree[2] = mergedGrid->Nc;
+      counttwo[1] = mergedGrid->Nc;
     }
-    
+
+    printf("Writing physical variables\n");
+
     /* Write to the physical variables*/
 
     // 2D cell-centered variables
@@ -485,6 +497,7 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
 	    nc_write_2D_merge(ncid,prop->nctimectr,  met->EP, prop, grid, "EP", numprocs, myproc, comm);
 
     }
+    printf("Writing 3D cells variables to netcdf\n");
 
     // 3D cell-centered variables
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->uc, prop, grid, "uc",0, numprocs, myproc, comm);
@@ -516,8 +529,7 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
     /* Update the time counter*/
     prop->nctimectr += 1;  
    }
-   
-  
+     
 } // End of function
 
 
@@ -804,7 +816,8 @@ static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, 
     **************/
    if(VERBOSE>1 && myproc==0) printf("Initialising output netcdf files...");
 
-
+   // Set the netcdf time ctr to 0
+   prop->nctimectr=0;
       
    /********************************************************************** 
     *
@@ -3996,10 +4009,10 @@ void WriteAverageNCmerge(propT *prop, gridT *grid, averageT *average, physT *phy
    // note that the first step of output from a restart will not
    // be accurate, since we don't have the integrate values from
    // the previous run.  Still, this should keep the map and
-   // average outputs the same length.
-   if( (prop->n==1+prop->nstart) || !(prop->n%prop->ntaverage) ) {
+   // average outputs the same length when ntout==ntaverage
+   if(!(prop->n%prop->ntaverage) || prop->n==prop->nstart) {
 
-    // Work out if we need to open a new averages file or not
+     // Work out if we need to open a new averages file or not
      if( !(prop->avgtimectr%prop->nstepsperncfile) || (prop->n==1+prop->nstart) ){
        if(prop->avgfilectr>average->initialavgfilectr){
          // Close the old netcdf file

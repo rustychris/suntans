@@ -1219,6 +1219,18 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       WriteOutputNC(prop, grid, phys, met, blowup, myproc);
     }
   }
+  // Output the average arrays -- these are probably meaningless in this step, but
+  // this keeps the average output and map output the same size.
+  // it also means that a specific index of average output i is integrating over
+  // the time step [i-1,i].
+  if(prop->calcaverage){
+    if(prop->mergeArrays){
+      WriteAverageNCmerge(prop,grid,average,phys,met,blowup,numprocs,comm,myproc);
+    }else{
+      WriteAverageNC(prop,grid,average,phys,met,blowup,comm,myproc);
+    }
+  }
+  
   // /RH
   
   // main time loop
@@ -4748,6 +4760,7 @@ void ReadProperties(propT **prop, gridT *grid, int myproc)
 
       (*prop)->nstepsperncfile=(int)MPI_GetValue(DATAFILE,"nstepsperncfile","ReadProperties",myproc);
       (*prop)->ncfilectr=(int)MPI_GetValue(DATAFILE,"ncfilectr","ReadProperties",myproc);
+      (*prop)->nctimectr = 0;
   }
   if((*prop)->nonlinear==2) {
     (*prop)->laxWendroff = MPI_GetValue(DATAFILE,"laxWendroff","ReadProperties",myproc);
