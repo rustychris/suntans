@@ -634,13 +634,23 @@ static void MergeGridVariables(gridT *grid, int numprocs, int myproc, MPI_Comm c
   }
 
   /* Integer variables size: [Ne, 2]*/
-  
   //grad - edge_face_connectivity
   if(myproc!=0) {
     for(jptr=grid->edgedist[0];jptr<grid->edgedist[EDGEMAX];jptr++) {
       j=grid->edgep[jptr];
       for(nf=0;nf<2;nf++){
-	  Ne2_int[(jptr-grid->edgedist[0])*2+nf]=grid->grad[j*2+nf];
+        // RH: I though Ne2_int should be indexed by
+        // j, rather than jptr-edgedist[0] ?  No, it needs to match
+        // the definition of eptr_all, which is indexed by jptr-edgedist[0].
+        i=grid->grad[j*2+nf];
+        // RH: previously subdomains provided cells directly from grad,
+        // which were mapped to global cells on proc 0 via mnptr_all[p], but
+        // that is wrong because mnptr_all[p] is indexed by iptr-celldist[0],
+        // not by cell index i.  easiest fix is to let subdomains map to global
+        // cell index via their own mnptr (which *is* indexed by cell index i)
+        // of course, pass negative (i.e. boundary) cell ids unchanged.
+        if(i>=0) i=grid->mnptr[i]; 
+        Ne2_int[(jptr-grid->edgedist[0])*2+nf]=i;
       }
     }
     MPI_Send(Ne2_int,(grid->edgedist[EDGEMAX]-grid->edgedist[0])*2,MPI_INT,0,1,comm);       
@@ -662,15 +672,18 @@ static void MergeGridVariables(gridT *grid, int numprocs, int myproc, MPI_Comm c
       MPI_Recv(Ne2_int,Ne_all[p]*2,MPI_INT,p,1,comm,&status);         
       for(j=0;j<Ne_all[p];j++){
 	 for(nf=0;nf<2;nf++){
-	    //mergedGrid->grad[eptr_all[p][i]*2+nf]=mnptr_all[p][Ne2_int[i*2+nf]];
-	    if(Ne2_int[j*2+nf]==-1){
-	      mergedGrid->grad[eptr_all[p][j]*2+nf]=-1;
-	    }else{
-	      i = Ne2_int[j*2+nf];
-	      // Type-5 marked edges will cause the index to overflow the mnptr array
-	      if(i<Nc_all[p]) 
-		  mergedGrid->grad[eptr_all[p][j]*2+nf]=mnptr_all[p][Ne2_int[j*2+nf]];
-	    }
+           //mergedGrid->grad[eptr_all[p][i]*2+nf]=mnptr_all[p][Ne2_int[i*2+nf]];
+           i = Ne2_int[j*2+nf];
+           // RH: let the subdomains handle mapping to global cell.
+           // there appears to be an error in mnptr_all.
+           mergedGrid->grad[eptr_all[p][j]*2+nf]=i;
+           
+           // RH old code mapped local cells i to global on proc 0
+           // if(i==-1){
+           //   mergedGrid->grad[eptr_all[p][j]*2+nf]=-1;
+           // }else if(i<Nc_all[p]) { // Type-5 marked edges will cause the index to overflow the mnptr array 
+           //   mergedGrid->grad[eptr_all[p][j]*2+nf]=mnptr_all[p][i];
+           // }
 	 }
       }
     }
