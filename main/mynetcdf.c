@@ -472,8 +472,6 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
       counttwo[1] = mergedGrid->Nc;
     }
 
-    printf("Writing physical variables\n");
-
     /* Write to the physical variables*/
 
     // 2D cell-centered variables
@@ -497,8 +495,6 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
 	    nc_write_2D_merge(ncid,prop->nctimectr,  met->EP, prop, grid, "EP", numprocs, myproc, comm);
 
     }
-    printf("Writing 3D cells variables to netcdf\n");
-
     // 3D cell-centered variables
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->uc, prop, grid, "uc",0, numprocs, myproc, comm);
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->vc, prop, grid, "vc",0, numprocs, myproc, comm);
