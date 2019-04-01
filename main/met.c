@@ -804,8 +804,13 @@ void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **
 
     // Surface current speed in wind direction
     // This is the projection of the water velocity vector onto the wind velocity vector
-    //x[1] = 0.0; 
-    x[1] = fabs(phys->uc[i][ktop]*met->Uwind[i]/Umag + phys->vc[i][ktop]*met->Vwind[i]/Umag); 
+    //x[1] = 0.0;
+    if ( x[0] > 1e-10 ) {
+      x[1] = fabs(phys->uc[i][ktop]*met->Uwind[i]/Umag + phys->vc[i][ktop]*met->Vwind[i]/Umag);
+    } else {
+      // if Umag is too small, just use wind magnitude
+      x[1] = sqrt(pow(phys->uc[i][ktop],2)+pow(phys->vc[i][ktop],2));
+    }
 
     // Water temperature
     x[2] = T[i][ktop];
