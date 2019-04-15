@@ -48,7 +48,8 @@ void OpenBoundaryFluxes(REAL **q, REAL **ub, REAL **ubn, gridT *grid, physT *phy
 
     ib = grid->grad[2*j];
 
-    for(k=grid->etop[j];k<grid->Nke[j];k++) 
+    // RH: This used to just zero out the entries that are immediately set below.
+    for(k=0;k<grid->etop[j];k++) 
       ub[j][k]=0;
 
     for(k=grid->etop[j];k<grid->Nke[j];k++) {
@@ -299,9 +300,9 @@ void BoundaryVelocities(gridT *grid, physT *phys, propT *prop, int myproc, MPI_C
       rampfac = 1.0;
   }
 
-   // Test
-   REAL amp = 0.25;
-   REAL omega = 7.27e-5;
+  // Test
+  // REAL amp = 0.25;
+  // REAL omega = 7.27e-5;
 
    // Update the netcdf boundary data
    if(prop->netcdfBdy==1){
@@ -317,12 +318,17 @@ void BoundaryVelocities(gridT *grid, physT *phys, propT *prop, int myproc, MPI_C
     ii+=1;
 
     //phys->boundary_h[jind]=0.0; // Not used??
+    
+    for(k=0;k<grid->etop[j];k++) {
+      phys->boundary_u[jind][k]=0.0;
+      phys->boundary_v[jind][k]=0.0;
+      phys->boundary_w[jind][k]=0.0;
+    }
+    
     for(k=grid->etop[j];k<grid->Nke[j];k++) {
      phys->boundary_u[jind][k]=bound->boundary_u[k][bound->ind2[ii]]*rampfac;
      phys->boundary_v[jind][k]=bound->boundary_v[k][bound->ind2[ii]]*rampfac;
      phys->boundary_w[jind][k]=bound->boundary_w[k][bound->ind2[ii]]*rampfac;
-     // printf("edge: %d,j: %d, k : %d, boundary_u = %f\n",jind,j,k,phys->boundary_u[jind][k]);
-     // printf("bound->boundary_u[k][bound->ind2[ii]]=%f\n",bound->boundary_u[k][bound->ind2[ii]]);
     }
   }
   }else{ // No NetCDF
