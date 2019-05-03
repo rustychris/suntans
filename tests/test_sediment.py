@@ -24,7 +24,7 @@ def test_sed_ic():
     have been relaxed somewhat.
     """
     g=unstructured_grid.UnstructuredGrid(max_sides=4)
-    g.add_rectilinear([0,0],[1000,100],50,50)
+    g.add_rectilinear([0,0],[1000,100],21,3)
     g.add_cell_field('depth',-6*np.ones(g.Ncells()))
 
     model=sun_driver.SuntansModel()
@@ -58,7 +58,7 @@ def test_sed_ic():
     # Sediment:
     model.config['computeSediments']=1   # whether include sediment model
     
-    model.config['Nlayer']=1 # Number of bed layers (MAX = 5)
+    model.config['Nlayer']=0 # Number of bed layers (MAX = 5)
     model.config['Nsize']=3  # Number of sediment fractions (Max = 3)
     model.config['TBMAX']=1  # whether to output tb for each cell
     model.config['SETsediment']=0       # When Nlayer>5 or Nsize>3, SETsediment=1 to use SetSediment 
@@ -71,21 +71,23 @@ def test_sed_ic():
     model.config['Ds1']=0.00000057   # sediment diameter for fraction No.1 (m)
     model.config['Ds2']=0.0002    # sediment diameter for fraction No.2                   
     model.config['Ds3']=0.0002    # sediment diameter for fraction No.3
-    model.config['Ws01']=0.0001     # constant settling velocity for fraction No.1 (m/s)
-    model.config['Ws02']=0.001     # constant settling velocity for fraction No.2
-    model.config['Ws03']=0.01     # constant settling velocity for fraction No.3
+    model.config['Ws01']= 0.0001     # constant settling velocity for fraction No.1 (m/s)
+    model.config['Ws02']= 0.01     # constant settling velocity for fraction No.2
+    model.config['Ws03']=-0.01     # constant settling velocity for fraction No.3
     model.config['Gsedi1']=2.65      # relative density for fraction No.1
     model.config['Gsedi2']=2.65      # relative density for fraction No.2
     model.config['Gsedi3']=2.65      # relative density for fraction No.3
     model.config['Prt1']=1       # Prandtl Number for fraction No.1
     model.config['Prt2']=1       # Prandtl Number for fraction No.2
     model.config['Prt3']=1       # Prandtl Number for fraction No.3
-    model.config['Consolid1']=0.0002    # Consolidation rate (g/m^2/s) for layer No.1
+    model.config['Consolid1']=0.00    # Consolidation rate (g/m^2/s) for layer No.1
     model.config['E01']=0.1      # Basic Erosion Rate Constant (g/m^2/s) for layer No.1
-    model.config['Taue1']=0.1       # Erosion Critical Shear Stress (N/m^2) for layer No.1
-    model.config['Taud1']=0.1       # Deposition Critical Shear Stress (N/m^2) for layer No.1
+    model.config['Taue1']=0.0       # Erosion Critical Shear Stress (N/m^2) for layer No.1
+    # Taud1 isn't actually used in current code.  Deposition always occurs at the rate
+    # of w_s.
+    model.config['Taud1']=0.0       # Deposition Critical Shear Stress (N/m^2) for layer No.1
     model.config['Drydensity1']=530000    # Dry density (g/m^3) for layer No.1
-    model.config['Thickness1']=1.0      # Thickness (m) for layer No.1
+    model.config['Thickness1']=0.0      # Thickness (m) for layer No.1
     model.config['softhard1']=1         # 0 soft or hard for layer No.1 to decide how to calculate erosion
     model.config['Bedmudratio1']=0.8       # Bed mud ratio for layer No.1
     model.config['Chind']=1000000   # Concentration (in volumetric fraction) criterion for hindered settling velocity
