@@ -112,7 +112,7 @@ void nc_read_3D(int ncid, char *vname, size_t start[3], size_t count[3], REAL **
 
     //Read the data
     if ((retval = nc_inq_varid(ncid, vname, &varid))) {
-      ERRM(retval,"inq_varid in nc_read_3D");
+      ERRM(retval,vname);
     }
     //    if ((retval = nc_get_vara_double(ncid, varid, start, count, &tmparray[0][0][0])))
     //	ERR(retval);
@@ -4783,9 +4783,12 @@ size_t returndimlen(int ncid, char *dimname){
  */
 void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
     int retval, j, k, n, p, sendSize;
+    int scal_idx;
     int t0, t1;
     int varid;
     char *vname;
+    char namebuff[300];
+    
     size_t start[]={0,0,0};
     size_t start2[]={0,0};
     size_t count[]={0,0,0};
@@ -4834,14 +4837,12 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
       vname = "boundary_w";
       if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
       nc_read_3D(ncid, vname, start, count, bound->boundary_w_t );
-      
-      vname = "boundary_T";
-      if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
-      nc_read_3D(ncid, vname, start, count, bound->boundary_T_t );
-      
-      vname = "boundary_S";
-      if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
-      nc_read_3D(ncid, vname, start, count, bound->boundary_S_t );
+
+      for(scal_idx=0;scal_idx<bound->num_scalars;scal_idx++) {
+        sprintf(namebuff,"boundary_%s",bound->scalars[scal_idx].varname); // e.g. "boundary_T"
+        if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",namebuff);
+        nc_read_3D(ncid, namebuff, start, count, bound->scalars[scal_idx].boundary_scal_t );
+      }
     }
 
     if(bound->hasType3){
@@ -4863,14 +4864,12 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
       vname = "wc";
       if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
       nc_read_3D(ncid, vname, start, count, bound->wc_t );
-      
-      vname = "T";
-      if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
-      nc_read_3D(ncid, vname, start, count, bound->T_t );
-      
-      vname = "S";
-      if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
-      nc_read_3D(ncid, vname, start, count, bound->S_t);
+
+      for(scal_idx=0;scal_idx<bound->num_scalars;scal_idx++) {
+        vname=bound->scalars[scal_idx].varname; // e.g. "T"
+        if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
+        nc_read_3D(ncid, vname, start, count, bound->scalars[scal_idx].scal_t );
+      }
       
       vname = "h";//2D array
       if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
@@ -4878,20 +4877,19 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
      }// End read type-3
 
      //Flux boundary data
-     if(bound->hasType2 && bound->hasSeg){
-
-	count2[1]=Nseg;
-	//if(myproc==0){
-	    vname = "boundary_Q";//2D array
-	    if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
-	    nc_read_2D(ncid, vname, start2, count2, bound->boundary_Q_t, myproc);
-	//}
-	//sendSize = count2[0]*count2[1];
-	//MPI_Bcast(&(bound->boundary_Q_t[0][0]),sendSize,MPI_DOUBLE,0,comm);
-
-     }//End flux read
-
-     if(bound->Npoint_source) {
+    if(bound->hasType2 && bound->hasSeg){
+      
+      count2[1]=Nseg;
+      //if(myproc==0){
+      vname = "boundary_Q";//2D array
+      if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
+      nc_read_2D(ncid, vname, start2, count2, bound->boundary_Q_t, myproc);
+      //}
+      //sendSize = count2[0]*count2[1];
+      //MPI_Bcast(&(bound->boundary_Q_t[0][0]),sendSize,MPI_DOUBLE,0,comm);
+    }//End flux read
+    
+    if(bound->Npoint_source) {
        count2[1]=bound->Npoint_source;
        // these differ from the above 
        count2[0]=1; // no quadratic interpolation
@@ -4908,24 +4906,18 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
        if ((retval = nc_get_vara_double(ncid, varid, start2, count2, bound->point_Q)))
          ERRM(retval,"reading point_Q"); 
        // nc_read_2D(ncid, vname, start2, count2, (REAL**)bound->point_Q, myproc);
-            
-       vname="point_T";
-       if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundary netcdf file...\n",vname);
-       if ((retval = nc_inq_varid(ncid, vname, &varid)))
-         ERRM(retval,"looking up point_T");
-       if ((retval = nc_get_vara_double(ncid, varid, start2, count2, bound->point_T)))
-         ERRM(retval,"reading point_T"); 
-       //nc_read_2D(ncid, vname, start2, count2, (REAL**)bound->point_T, myproc);
-       // printf("Read in temperature for first point source: %.2f\n",bound->point_T[0]);
-       
-       vname="point_S";
-       if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundary netcdf file...\n",vname);
-       if ((retval = nc_inq_varid(ncid, vname, &varid)))
-         ERRM(retval,"looking up point_S");
-       if ((retval = nc_get_vara_double(ncid, varid, start2, count2, bound->point_S)))
-         ERRM(retval,"reading point_S"); 
-       //nc_read_2D(ncid, vname, start2, count2, (REAL**)bound->point_S, myproc);
-       // printf("Read in salt for first point source: %.2f\n",bound->point_S[0]);
+
+       for(scal_idx=0;scal_idx<bound->num_scalars;scal_idx++) {
+         sprintf(namebuff,"point_%s",bound->scalars[scal_idx].varname); // e.g. "point_T"
+         vname=namebuff;
+         
+         if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundary netcdf file...\n",vname);
+         if ((retval = nc_inq_varid(ncid, vname, &varid)))
+           ERRM(retval,vname);
+         if ((retval = nc_get_vara_double(ncid, varid, start2, count2,
+                                          bound->scalars[scal_idx].point_scal)))
+           ERRM(retval,vname); 
+       }       
      }
 
    // Wait for all processors

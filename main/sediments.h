@@ -13,6 +13,7 @@
 #include "suntans.h"
 #include "grid.h"
 #include "phys.h"
+#include "boundaries.h"
 
 typedef struct _sedimentsT {
 REAL ***SediC,// sediment concentration [fraction][cell][Nkmax]
@@ -56,6 +57,8 @@ int Nlayer, // number of bed layer -> given in sedi.dat
     bedComplex,  // whether consider the possibility to flush away a whole layer
     TBMAX,       // whether to output the tb for each cell
     readSediment; // if 1, we will read sediment file as the IC for sediment Concentration, Now just support Nsizemax=1
+
+  scalar_boundT **sed_bounds; // structs with boundary data for each size class,
   FILE *LayerthickFID, **SedimentFID, *SeditbFID, *SeditbmaxFID;
 } sedimentsT;
 

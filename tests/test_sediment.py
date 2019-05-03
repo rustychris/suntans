@@ -31,7 +31,7 @@ def base_model():
     model.load_template('point_source_test.dat')
     model.set_grid(g)
     model.run_start=np.datetime64("2018-01-01 00:00")
-    model.run_stop =np.datetime64("2018-01-01 01:00")
+    model.run_stop =np.datetime64("2018-01-01 10:00")
 
     dt=np.timedelta64(600,'s')
     times=np.arange(model.run_start-dt,model.run_stop+2*dt,dt)
@@ -49,7 +49,7 @@ def base_model():
     model.set_run_dir('rundata_sedi_3d', mode='pristine')
     model.projection='EPSG:26910'
     model.num_procs=1 # test single first
-    model.config['dt']=2.5
+    model.config['dt']=30
     model.config['ntout']=5
     model.config['Cmax']=30
     model.config['Nkmax']=10
@@ -103,7 +103,7 @@ def base_model():
     model.config['tbmaxFile']='Seditbmax.dat'
     return model
 
-def test_sed_ic():
+def test_sed_quiescent():
     """
     quiescent, uniform ic, sed1 settles down, sed2 settles up.
     """
@@ -126,5 +126,81 @@ def test_sed_ic():
     model.sun_verbose_flag='-v'
     model.run_simulation()
     return model
-       
-model=test_sed_ic()
+
+def test_sed_ic():
+    """
+    spatially variable IC.
+    """
+    model=base_model()
+    
+    model.write()
+
+    # leave some dry layers at the surface
+    model.ic_ds.eta.values[:]=model.bcs[0].z
+    model.ic_ds.salt.values[:]=1.0
+    model.ic_ds.temp.values[:]=1.0
+
+    # let sed1 default to 0
+    for sed in ['sed2','sed3']:
+        model.ic_ds[sed]=model.ic_ds['salt'].copy()
+        if sed=='sed2':
+            sed_grad=model.ic_ds.xv.values / 1000.
+        else:
+            sed_grad=(1000-model.ic_ds.xv.values) / 1000.
+        # time,Nk,Nc
+        model.ic_ds[sed].values[:,:,:]=sed_grad[None,None,:]
+    model.write_ic_ds()
+
+    model.partition()
+    model.sun_verbose_flag='-v'
+    model.run_simulation()
+    return model
+
+def test_sed_bc():
+    """
+    basic BC
+    """
+    model=base_model()
+
+    # slow down the settling velocities to get some advection mixed in
+    model.config['Ws01']= 0.0001     # constant settling velocity for fraction No.1 (m/s)
+    model.config['Ws02']= 0.0001     # constant settling velocity for fraction No.2
+    model.config['Ws03']=-0.0001     # constant settling velocity for fraction No.3
+
+    geom=np.array([ [1000,0],
+                    [1000,100]])
+    Q_bc=sun_driver.FlowBC(name="Q_bc",
+                           geom=geom,
+                           Q=100.0)
+    
+    model.add_bcs( [Q_bc,
+                    sun_driver.ScalarBC(parent=Q_bc,scalar="S",value=2),
+                    sun_driver.ScalarBC(parent=Q_bc,scalar="T",value=0)] )
+    
+    model.write()
+
+    # leave some dry layers at the surface
+    model.ic_ds.eta.values[:]=model.bcs[0].z
+    model.ic_ds.salt.values[:]=1.0
+    model.ic_ds.temp.values[:]=1.0
+
+    model.write_ic_ds()
+        
+    for sed_idx in range(3):
+        name="sed%d"%(sed_idx+1)
+        model.bc_ds['boundary_'+name]=model.bc_ds['boundary_S'].copy()
+        model.bc_ds[name]=model.bc_ds['S'].copy()
+        model.bc_ds['point_'+name]=model.bc_ds['point_S'].copy()
+        
+        model.bc_ds['boundary_'+name].values[:]=sed_idx*1.0
+        model.bc_ds[name].values[:]=0.0
+        model.bc_ds['point_'+name].values[:]=sed_idx*1.0
+
+    model.write_bc_ds()
+    
+    model.partition()
+    model.sun_verbose_flag='-v'
+    model.run_simulation()
+    return model
+
+model=test_sed_bc()

@@ -58,15 +58,6 @@ int main(int argc, char *argv[])
       ReadPhysicalVariables(grid,phys,prop,myproc,comm);
     else
       InitializePhysicalVariables(grid,phys,prop,myproc,comm);
-
-    if ( prop->computeSediments ) {
-      sediments=(sedimentsT *)SunMalloc(sizeof(sedimentsT),"ComputeSediments");
-      // allocate and initialize all the sediment variables
-      ReadSediProperties(myproc);
-      OpenSediFiles(prop,myproc); 
-      AllocateSediment(grid,myproc);  
-      InitializeSediment(grid,phys,prop,myproc);
-    }
     
     Solve(grid,phys,prop,myproc,numprocs,comm);
     //    FreePhysicalVariables(grid,phys,prop);

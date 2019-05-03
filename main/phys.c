@@ -1151,6 +1151,14 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
   // RH: SetFluxHeight is now wrapped inside UpdateDZ to keep dzz and dzf
   //     consistent
   if(prop->computeSediments) {
+    // allocate and initialize all the sediment variables
+    sediments=(sedimentsT *)SunMalloc(sizeof(sedimentsT),"ComputeSediments");
+    ReadSediProperties(myproc);
+    OpenSediFiles(prop,myproc); 
+    AllocateSediment(grid,myproc);  
+    InitializeSediment(grid,phys,prop,myproc);
+
+    // And go ahead and prep for first step
     BoundarySediment(grid,phys,prop,myproc,comm);
   }
   

@@ -92,7 +92,7 @@ void ReadSediProperties(int myproc) {
     sediments->Thickness=NULL;
     sediments->Softhard=NULL;
   }
-  
+
   /*sediments->Bedmudratio=(REAL *)SunMalloc(sediments->Nlayer*sizeof(REAL), "ReadSedimentProperties");*/
   //if(sediments->SETsediment==0){
   for(m=1;m<=sediments->Nsize;m++) {
@@ -140,7 +140,8 @@ void ReadSediProperties(int myproc) {
  */
 void AllocateSediment(gridT *grid, int myproc) { 
   int i,j,jptr,k;
-
+  char str[256];
+  
   sediments->SediC = (REAL ***)SunMalloc(sediments->Nsize*sizeof(REAL **), "AllocateSediVariables");
   sediments->SediCbed = (REAL ***)SunMalloc(sediments->Nsize*sizeof(REAL **), "AllocateSediVariables");
   //sediments->Erosion = (REAL ***)SunMalloc(sediments->Nsize*sizeof(REAL *), "AllocateSediVariables");
@@ -221,6 +222,12 @@ void AllocateSediment(gridT *grid, int myproc) {
     sediments->Softhard=(REAL *)SunMalloc(sediments->Nlayer*sizeof(REAL), "AllocateSediVariables");
     //sediments->Bedmudratio=(REAL *)SunMalloc(sediments->Nlayer*sizeof(REAL), "AllocateSediVariables");
   }*/
+
+  sediments->sed_bounds=(scalar_boundT**)SunMalloc( sediments->Nsize*sizeof(scalar_boundT*),"ReadSedimentProperties");
+  for(i=0;i<sediments->Nsize;i++) {
+    sprintf(str,"sed%d",i+1);
+    sediments->sed_bounds[i]=AllocateBoundaryScalar(str,bound,myproc);
+  }
 }
 
 /*
