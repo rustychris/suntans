@@ -514,7 +514,7 @@ void calcInterpWeights(gridT *grid, propT *prop, REAL *xo, REAL *yo, int Ns, int
     
     int j, i, jj, ii, iptr, jptr;
     int Nc = grid->Nc;
-    const REAL inversepower = 2.2;
+    const REAL inversepower = 1.2; // RH trying something smoother than original 2.2;
     REAL sumgamma, dist, tmp;
     REAL *gamma;
     REAL **C, **Ctmp;
@@ -533,23 +533,22 @@ void calcInterpWeights(gridT *grid, propT *prop, REAL *xo, REAL *yo, int Ns, int
     
     if(prop->varmodel==0){ // Inverse distance weighting
       if(VERBOSE>1 && myproc==0) printf("Calculating interpolation weights using inverse distance weighting...\n");     
-      //for(i=0;i<Nc;i++){
-     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
-	i = grid->cellp[iptr];  
+      for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
+	i = grid->cellp[iptr];
+        // approximate min length scale for inverse distance
+        tmp=sqrt(grid->Ac[i]);
 	sumgamma=0.0;
 	for(j=0;j<Ns;j++){
-	    dist = pow(grid->xv[i]-xo[index[i][j]],2) + pow(grid->yv[i]-yo[index[i][j]],2);
-	    gamma[j] = 1.0/pow(dist,inversepower);
-	    sumgamma += gamma[j];
-	    //printf("dist = %f, sum = %f\n",dist,sumgamma);
+          dist = pow(grid->xv[i]-xo[index[i][j]],2) + pow(grid->yv[i]-yo[index[i][j]],2);
+          gamma[j] = 1.0/pow(dist+tmp,inversepower);
+          sumgamma += gamma[j];
 	}
 	for(j=0;j<Ns;j++){
-	    klambda[i][j] = gamma[j]/sumgamma;
-	    //printf("weight = %f\n",klambda[i][j]);
+          klambda[i][j] = gamma[j]/sumgamma;
 	}
       }
-    
-    //SunFree(gamma,Ns,"CalcInterpWeights");
+      
+      //SunFree(gamma,Ns,"CalcInterpWeights");
     
     }else{ // kriging
 	if(VERBOSE>1 && myproc==0)  printf("Calculating interpolation weights using kriging...\n");
@@ -804,8 +803,13 @@ void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **
 
     // Surface current speed in wind direction
     // This is the projection of the water velocity vector onto the wind velocity vector
-    //x[1] = 0.0; 
-    x[1] = fabs(phys->uc[i][ktop]*met->Uwind[i]/Umag + phys->vc[i][ktop]*met->Vwind[i]/Umag); 
+    //x[1] = 0.0;
+    if ( x[0] > 1e-10 ) {
+      x[1] = fabs(phys->uc[i][ktop]*met->Uwind[i]/Umag + phys->vc[i][ktop]*met->Vwind[i]/Umag);
+    } else {
+      // if Umag is too small, just use wind magnitude
+      x[1] = sqrt(pow(phys->uc[i][ktop],2)+pow(phys->vc[i][ktop],2));
+    }
 
     // Water temperature
     x[2] = T[i][ktop];
