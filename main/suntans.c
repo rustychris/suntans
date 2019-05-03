@@ -17,10 +17,12 @@
  * 
  */
 #include "suntans.h"
+#include "memory.h"
 #include "mympi.h"
 #include "grid.h"
 #include "gridio.h"
 #include "phys.h"
+#include "sediments.h"
 #include "physio.h"
 #include "report.h"
 
@@ -49,6 +51,7 @@ int main(int argc, char *argv[])
     InitializeVerticalGrid(&grid,myproc);
     AllocatePhysicalVariables(grid,&phys,prop);
     AllocateTransferArrays(&grid,myproc,numprocs,comm);
+    
     InitializeEdgeDepths(grid,myproc,comm,LOCAL_GRID);
     OpenFiles(prop,myproc);
     if(RESTART)
@@ -56,6 +59,15 @@ int main(int argc, char *argv[])
     else
       InitializePhysicalVariables(grid,phys,prop,myproc,comm);
 
+    if ( prop->computeSediments ) {
+      sediments=(sedimentsT *)SunMalloc(sizeof(sedimentsT),"ComputeSediments");
+      // allocate and initialize all the sediment variables
+      ReadSediProperties(myproc);
+      OpenSediFiles(prop,myproc); 
+      AllocateSediment(grid,myproc);  
+      InitializeSediment(grid,phys,prop,myproc);
+    }
+    
     Solve(grid,phys,prop,myproc,numprocs,comm);
     //    FreePhysicalVariables(grid,phys,prop);
     //    FreeTransferArrays(grid,myproc,numprocs,comm);

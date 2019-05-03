@@ -7,6 +7,7 @@
 
 #include "mynetcdf.h"
 #include "merge.h"
+#include "sediments.h"
 
 /***********************************************
 * Private functions
@@ -542,6 +543,7 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
 void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup, int myproc){
    int ncid = prop->outputNetcdfFileID;
    int varid, retval, k;
+   char varname[256];
    // Start and count vectors for one, two and three dimensional arrays
    const size_t startone[] = {prop->nctimectr};
    const size_t countone[] = {1};
@@ -652,6 +654,18 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
        ravel(age->agealpha, phys->tmpvar, grid);
        if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
          ERRM(retval,"agealpha");
+     }
+
+     // Sediment output:
+     if(prop->computeSediments){
+       for(k=0;k<sediments->Nsize;k++){
+         sprintf(varname,"sed%d",k);
+         if ((retval = nc_inq_varid(ncid, varname, &varid)))
+           ERRM(retval,"sed var id");
+         ravel(sediments->SediC[k], phys->tmpvar, grid);
+         if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
+           ERRM(retval,"sed conc");
+       }
      }
      
      // Vertical grid spacing
@@ -1551,7 +1565,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
    const int DEFLATE=1;
    const int DEFLATELEVEL=2;
    const REAL FILLVALUE = (REAL)EMPTY;
-
+   char varname[256];
 
    //REAL *tmpvar;
    // Need to write the 3-D arrays as vectors
@@ -2148,6 +2162,25 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
     // Set back to time for the other variables
     dimidtwo[0] = dimid_time;
     */
+   }
+
+   //sediment
+   if(prop->computeSediments){
+     for(k=0;k<sediments->Nsize;k++){
+       sprintf(varname,"sed%d",k);
+     
+       if ((retval = nc_def_var(ncid,varname,NC_DOUBLE,3,dimidthree,&varid)))
+         ERRM(retval,"Define sed var");
+       if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
+         ERR(retval);
+       if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
+         ERR(retval);
+       nc_addattr(ncid, varid,"long_name","Sediment concentration");
+       nc_addattr(ncid, varid,"units","mg l-1"); // is that true?
+       nc_addattr(ncid, varid,"mesh","suntans_mesh");
+       nc_addattr(ncid, varid,"location","face");
+       nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+     }
    }
 
    //U

@@ -1148,6 +1148,9 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
   // set the height of the face bewteen cells to compute the flux
   // RH: SetFluxHeight is now wrapped inside UpdateDZ to keep dzz and dzf
   //     consistent
+  if(prop->computeSediments) {
+    BoundarySediment(grid,phys,prop,myproc,comm);
+  }
   
   // set the drag coefficients for bottom friction
   SetDragCoefficients(grid,phys,prop);
@@ -1452,6 +1455,9 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       // boundary velocities to the new time step values for use in the 
       // free surface calculation.
       BoundaryScalars(grid,phys,prop,myproc,comm);
+      if(prop->computeSediments) {
+        BoundarySediment(grid,phys,prop,myproc,comm);
+      }
       WindStress(grid,phys,prop,met,myproc);
       SetDragCoefficients(grid,phys,prop);
 

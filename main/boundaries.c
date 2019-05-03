@@ -1114,7 +1114,7 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
  * at the open boundaries.
  * 
  */
-void BoundarySediment(gridT *grid, physT *phys, propT *prop) {
+void BoundarySediment(gridT *grid, physT *phys, propT *prop,int myproc, MPI_Comm comm) {
   int jptr, j, ib, k,nosize,i,iptr;
   REAL z;
 

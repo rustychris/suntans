@@ -887,15 +887,10 @@ void ISendRecvSediBedData3D(REAL **celldata, gridT *grid, int nlayer,int myproc,
 void ComputeSediments(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, int blowup, MPI_Comm comm)
 {
   int k;
-  if(prop->n==1+prop->nstart){
-    sediments=(sedimentsT *)SunMalloc(sizeof(sedimentsT),"ComputeSediments");
-    // allocate and initialize all the sediment variables
-    ReadSediProperties(myproc); 
-    OpenSediFiles(prop,myproc); 
-    AllocateSediment(grid,myproc);  
-    InitializeSediment(grid,phys,prop,myproc);
-    BoundarySediment(grid,phys,prop);
-  }
+  // RH -- moved this suntans.c
+  // if(prop->n==1+prop->nstart){
+  //   ...
+  // }
   
   // calculate n+theta Erosion for boundary 
   CalculateErosion(grid,phys,prop,myproc);
