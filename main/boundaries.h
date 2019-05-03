@@ -176,6 +176,7 @@ void BoundaryScalars(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm
 void BoundarySediment(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void PointSources(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void PointSourcesContinuity(REAL **w, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
+void PointSourceScalar(REAL *scalar,REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void PointSourceTemp(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void PointSourceSalt(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void WindStress(gridT *grid, physT *phys, propT *prop, metT *met, int myproc);

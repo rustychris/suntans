@@ -166,7 +166,6 @@ void PointSourceSalt(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, 
   PointSourceScalar(bound->point_S,A,B,grid,phys,prop,myproc,comm);
 }
 
-
 /*
  * Function: BoundaryScalars
  * Usage: BoundaryScalars(boundary_s,boundary_T,grid,phys,prop);

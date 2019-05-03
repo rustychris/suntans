@@ -74,7 +74,7 @@ void FreeSediment(gridT *grid, int myproc);
 void CalculateErosion(gridT *grid, physT *phys, propT *prop,  int myproc);
 void CalculateDeposition(gridT *grid, physT *phys, int myproc); //used by calculateerosion and Bedchange
 void BedChange(gridT *grid, physT *phys, propT *prop, int myproc);
-void SedimentSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop,int Nosize, REAL theta);
+void SedimentSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop,int Nosize, REAL theta,int myproc, MPI_Comm comm);
 void SedimentVerticalVelocity(gridT *grid, physT *phys,int Nosize,int symbol, int myproc);
 void OpenSediFiles(propT *prop, int myproc);
 void OutputSediment(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, int blowup, MPI_Comm comm);

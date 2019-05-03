@@ -721,7 +721,8 @@ void BedChange(gridT *grid, physT *phys, propT *prop, int myproc) {
  * same use as Heatsource, add new parameter Nosize to represent the No. of Nsize for fraction
  *
  */
-void SedimentSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop,int Nosize,REAL theta) {
+void SedimentSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop,int Nosize,REAL theta,
+                    int myproc, MPI_Comm comm) {
   int i, k, layertop;
   REAL erosion, erosion_old;
 
@@ -753,6 +754,9 @@ void SedimentSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop,in
       A[i][grid->Nk[i]-1]=((1-theta)*erosion_old+theta*erosion)*sediments->SediCbed[Nosize][i][layertop]/sediments->Drydensity[layertop]/grid->dzzold[i][grid->Nk[i]-1];
     }
   }
+
+  PointSourceScalar(sediments->sed_bounds[Nosize]->point_scal,
+                    A,B,grid,phys,prop,myproc,comm);
 }
 
 /*
@@ -975,8 +979,8 @@ void ComputeSediments(gridT *grid, physT *phys, propT *prop, int myproc, int num
   CalculateErosion(grid,phys,prop,myproc);
   // calculate n+1 Sediment concentration field
   for(k=0;k<sediments->Nsize;k++){
-    SedimentSource(phys->wtmp,phys->uold,grid,phys,prop,k,prop->theta);
-    
+    SedimentSource(phys->wtmp,phys->uold,grid,phys,prop,k,prop->theta,myproc,comm);
+
     SedimentVerticalVelocity(grid,phys,k,1,myproc);
     
     CalculateSediDiffusivity(grid,phys,k,myproc);

@@ -176,7 +176,14 @@ def test_sed_bc():
     model.add_bcs( [Q_bc,
                     sun_driver.ScalarBC(parent=Q_bc,scalar="S",value=2),
                     sun_driver.ScalarBC(parent=Q_bc,scalar="T",value=0)] )
-    
+
+    point_bc=sun_driver.SourceSinkBC(name="bedPoint",
+                                     geom=np.array([500,20]),
+                                     Q=10)
+    model.add_bcs( [point_bc,
+                    sun_driver.ScalarBC(parent=point_bc,scalar="S",value=3),
+                    sun_driver.ScalarBC(parent=point_bc,scalar="T",value=3)] )
+                    
     model.write()
 
     # leave some dry layers at the surface
@@ -194,7 +201,7 @@ def test_sed_bc():
         
         model.bc_ds['boundary_'+name].values[:]=sed_idx*1.0
         model.bc_ds[name].values[:]=0.0
-        model.bc_ds['point_'+name].values[:]=sed_idx*1.0
+        model.bc_ds['point_'+name].values[:]=sed_idx*2.0
 
     model.write_bc_ds()
     
