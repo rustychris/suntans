@@ -17,6 +17,7 @@
 #include "initialization.h"
 #include "boundaries.h"
 #include "sediments.h"
+#include "mynetcdf.h"
 #include "util.h"
 #include "tvd.h"
 #include "mympi.h"
@@ -232,23 +233,27 @@ void AllocateSediment(gridT *grid, int myproc) {
 void InitializeSediment(gridT *grid, physT *phys, propT *prop,  int myproc) { 
   int s,i,j,k,ne;
   REAL *stmp,z;
+  
+  REAL *ncscratch;
+  int Nci,Nei,Nki,T0;
+  
   FILE *InitSedimentFID;
   char str[BUFFERLENGTH], filename[BUFFERLENGTH];
 
   // give 0 for SediC boundary_sediC Ws
-  for(i=0;i<sediments->Nsize;i++) {
+  for(s=0;s<sediments->Nsize;s++) {
     for(j=0;j<grid->Nc;j++){
       for(k=0;k<grid->Nk[j];k++) {
-        sediments->SediC[i][j][k]=0;        
-        sediments->Ws[i][j][k]=0;
+        sediments->SediC[s][j][k]=0;        
+        sediments->Ws[s][j][k]=0;
       }
-      sediments->Ws[i][j][grid->Nk[j]]=0;
+      sediments->Ws[s][j][grid->Nk[j]]=0;
     }
 
     for(j=0;j<(grid->edgedist[5]-grid->edgedist[2]);j++) {
       ne=grid->edgep[j+grid->edgedist[2]]; 
       for(k=0;k<grid->Nke[ne];k++)
-        sediments->boundary_sediC[i][j][k]=0; // boundary_sediC will be set using BoundaryScalars function  
+        sediments->boundary_sediC[s][j][k]=0; // boundary_sediC will be set using BoundaryScalars function  
     }
   }
   
@@ -304,7 +309,17 @@ void InitializeSediment(gridT *grid, physT *phys, propT *prop,  int myproc) {
   }
 
   // read or use function to set initial condition for SediC
-  if(sediments->readSediment) { //it means Nsize==1
+  if( prop->readinitialnc ) {
+    ReadInitialNCcoord(prop,grid,&Nci,&Nei,&Nki,&T0,myproc);
+    // Initialise a scratch variable for reading arrays
+    // this is used both for 3D, cell-centered values *and* 2D edge-centered
+    // values (roughness), so make it big enough for either.
+    ncscratch = (REAL *)SunMalloc( Nki*Nci*sizeof(REAL),"InitializePhysicalVariables");
+    for(s=0;s<sediments->Nsize;s++){
+      ReturnSedimentNC(s,prop,phys,grid,ncscratch,Nci,Nki,T0,myproc);
+    }
+    SunFree(ncscratch,Nki*Nci*sizeof(REAL),"InitializeSediment");
+  } else if(sediments->readSediment) { //it means Nsize==1
     MPI_GetFile(filename,DATAFILE,"InitSedimentFile","InitializeSediment",myproc);
     InitSedimentFID = MPI_FOpen(filename,"r","InitializeSediment",myproc);
     stmp = (REAL *)SunMalloc(grid->Nkmax*sizeof(REAL),"InitializeSediment");
@@ -318,12 +333,12 @@ void InitializeSediment(gridT *grid, physT *phys, propT *prop,  int myproc) {
     
     SunFree(stmp,grid->Nkmax,"InitializeSediment");
   } else {
-    for(j=0;j<sediments->Nsize;j++){
+    for(s=0;s<sediments->Nsize;s++){
       for(i=0;i<grid->Nc;i++) {
         z = 0;
         for(k=grid->ctop[i];k<grid->Nk[i];k++) {
           z-=grid->dz[k]/2;
-          sediments->SediC[j][i][k]=ReturnSediment(grid->xv[i],grid->yv[i],z,j); // add new functions in Initialization.c
+          sediments->SediC[s][i][k]=ReturnSediment(grid->xv[i],grid->yv[i],z,s); // add new functions in Initialization.c
           z-=grid->dz[k]/2;
         }
       }

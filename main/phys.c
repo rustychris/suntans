@@ -578,7 +578,7 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   // The 1 indicates that this is the first call to UpdateDZ
   UpdateDZ(grid,phys,prop, 1,myproc);
 
-  // initailize variables to 0 (except for filter "pressure")
+  // initialize variables to 0 (except for filter "pressure")
   for(i=0;i<Nc;i++) {
     phys->w[i][grid->Nk[i]]=0;
     for(k=0;k<grid->Nk[i];k++) {
@@ -642,7 +642,9 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
       }
     }
   }
- 
+
+  // Sediment initial condition is inside InitializeSediment
+  
   // Initialize the velocity field 
   for(j=0;j<grid->Ne;j++) {
     z = 0;

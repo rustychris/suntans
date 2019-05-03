@@ -655,7 +655,7 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
      // Sediment output:
      if(prop->computeSediments){
        for(k=0;k<sediments->Nsize;k++){
-         sprintf(varname,"sed%d",k);
+         sprintf(varname,"sed%d",k+1); // 1-based to match suntans.dat
          if ((retval = nc_inq_varid(ncid, varname, &varid)))
            ERRM(retval,"sed var id");
          ravel(sediments->SediC[k], phys->tmpvar, grid);
@@ -2163,7 +2163,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
    //sediment
    if(prop->computeSediments){
      for(k=0;k<sediments->Nsize;k++){
-       sprintf(varname,"sed%d",k);
+       sprintf(varname,"sed%d",k+1);
      
        if ((retval = nc_def_var(ncid,varname,NC_DOUBLE,3,dimidthree,&varid)))
          ERRM(retval,"Define sed var");
@@ -5222,6 +5222,46 @@ void ReturnSalinityNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nci
        phys->s[i][k]=htmp[ind];
        phys->s0[i][k]=htmp[ind];
      }
+  }
+} // End function
+
+// Pull sediment initial condition for size class sizeno from netcdf
+void ReturnSedimentNC(int sizeno, propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nci, int Nki, int T0, int myproc){
+  int i,k,ind;
+  size_t start[] = {T0, 0, 0};
+  size_t count[] = {1, Nki, Nci};
+  
+  char varname[256];
+   
+  int varid, retval;
+  int ncid = prop->initialNCfileID;
+
+  // 1-based to match the names in suntans.dat
+  sprintf(varname,"sed%d",sizeno+1);
+  
+  if(VERBOSE>1 && myproc==0) printf("Reading %s initial condition from netcdf file...\n",varname);
+  if ((retval = nc_inq_varid(ncid, varname, &varid))) {
+    printf("Could not find sediment initial condition %s, will default to 0.0\n",varname);
+    for(i=0;i<grid->Nc;i++) {
+      k=grid->ctop[i];
+      if(k==grid->Nk[i]) k--; // be sure to get the bed layer even if 'dry' from ctop.
+      for(;k<grid->Nk[i];k++) {
+        sediments->SediC[sizeno][i][k]=0.0;
+      }
+    }
+    return;
+  }
+  
+  if ((retval = nc_get_vara_double(ncid, varid, start, count, &htmp[0]))) 
+    ERRM(retval," could not read sediment initial condition"); 
+  
+  for(i=0;i<grid->Nc;i++) {
+    k=grid->ctop[i];
+    if(k==grid->Nk[i]) k--; // be sure to get the bed layer even if 'dry' from ctop.
+    for(;k<grid->Nk[i];k++) {
+      ind = k*Nci + grid->mnptr[i]; 
+      sediments->SediC[sizeno][i][k]=htmp[ind];
+    }
   }
 } // End function
 

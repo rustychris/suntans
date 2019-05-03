@@ -11,7 +11,7 @@ import xarray as xr
 
 sun_driver.SuntansModel.sun_bin_dir=os.path.join(os.path.dirname(__file__),"../main")
 
-def test_sed_ic():
+def base_model():
     """
     A square 3D grid with wetting and drying.
     the bathymetry is a wavy cos(x)*cos(y) function.
@@ -36,10 +36,11 @@ def test_sed_ic():
     dt=np.timedelta64(600,'s')
     times=np.arange(model.run_start-dt,model.run_stop+2*dt,dt)
     secs=(times-times[0])/np.timedelta64(1,'s')
+    eta0=-2
     eta_bc=sun_driver.StageBC(name="eta_bc",
                               geom=np.array([ [0,0],
                                               [0,100]]),
-                              z=0)
+                              z=eta0)
 
     model.add_bcs(eta_bc)
     model.add_bcs( [sun_driver.ScalarBC(parent=eta_bc,scalar="S",value=1),
@@ -100,17 +101,30 @@ def test_sed_ic():
     model.config['LayerFile']='sedilayer.dat'
     model.config['tbFile']='Seditb.dat'
     model.config['tbmaxFile']='Seditbmax.dat'
+    return model
 
+def test_sed_ic():
+    """
+    quiescent, uniform ic, sed1 settles down, sed2 settles up.
+    """
+    model=base_model()
+    
     model.write()
 
-    model.ic_ds.eta.values[:]=0.0
+    # leave some dry layers at the surface
+    model.ic_ds.eta.values[:]=model.bcs[0].z
     model.ic_ds.salt.values[:]=1.0
     model.ic_ds.temp.values[:]=1.0
+
+    # let sed1 default to 0
+    for sed in ['sed2','sed3']:
+        model.ic_ds[sed]=model.ic_ds['salt'].copy()
+        model.ic_ds[sed].values[:]=100.0
     model.write_ic_ds()
 
     model.partition()
     model.sun_verbose_flag='-v'
     model.run_simulation()
-
+    return model
        
-test_sed_ic()
+model=test_sed_ic()
