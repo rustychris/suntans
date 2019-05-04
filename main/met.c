@@ -905,7 +905,7 @@ void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **
       //met->tau_y[j] = 1.2 * 0.0011 * x[14] * met->Vwind[j];
       //printf("%10.6f, %10.6f, %10.6f, %10.6f\n",x[6],x[15],x[14],met->Vwind[j]);
 
-    }else if(prop->metmodel>=3){// Compute fluxes with constant parameters
+    } else if(prop->metmodel>=3){// Compute fluxes with constant parameters
       met->Hs[i] = - rhoa * cpa * Ch * Umag * (x[2] - x[3]);//T_w > T_a -> Hs is negative
       met->Hl[i] = - rhoa * Lv * Ce * Umag * (x[4] - x[5]);
       met->tau_x[i] = rhoa * Cd * Umag * (met->Uwind[i] - phys->uc[i][ktop]); 

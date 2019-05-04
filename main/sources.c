@@ -180,19 +180,16 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
                           // F = alpha_E2 + alpha_E3*U2 with much smaller numbers
   alpha_E2 = 2.81e-9;     // Formula from Martin et al. "Hydrodynamics and transport for water quality modeling" 
                           // (in mb^{-1} m s^{-1}
-   alpha_E3 = 0.14e-9;     // From Martin et al. 1999
+  alpha_E3 = 0.14e-9;     // From Martin et al. 1999
   // Original Values in Wood et al
- // alpha_E1 = 0.26;
- // alpha_E2 = 0.50;
- // alpha_E3 = 0.54;
+  // alpha_E1 = 0.26;
+  // alpha_E2 = 0.50;
+  // alpha_E3 = 0.54;
   //
   alpha_E4 = 6.11;
   alpha_E5 = 17.3;
   alpha_LW = 0.17;
   
-  
-
-
   /* 
    * Atmospheric properties at the current time step, spatially distributed over
    * the surface in arrays:
@@ -202,7 +199,7 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
    *   rh = relative humidity (0<rh<1)
    *
    */
- // GetAtmosphericProperties(Ta,M,U2,rh,grid,phys,prop);
+  // GetAtmosphericProperties(Ta,M,U2,rh,grid,phys,prop);
 
   /*
    * Incoming longwave radiation
@@ -223,7 +220,7 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
     rh = met->RH[i]/100.0;
     //H_LW = met->Hlw[i];
     // Emissivity of air
-   epsilon_a = alpha_0*(1+alpha_LW*M*M)*pow(Ta + T_0,2.0);
+    epsilon_a = alpha_0*(1+alpha_LW*M*M)*pow(Ta + T_0,2.0);
     
     // Incoming longwave
     // H_LW = epsilon_a*sigma*(1-r_LW)*pow(Ta[i]+T_0,2);

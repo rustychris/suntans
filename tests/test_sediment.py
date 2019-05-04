@@ -13,15 +13,7 @@ sun_driver.SuntansModel.sun_bin_dir=os.path.join(os.path.dirname(__file__),"../m
 
 def base_model():
     """
-    A square 3D grid with wetting and drying.
-    the bathymetry is a wavy cos(x)*cos(y) function.
-    two point sources and an oscillating freesurface.
-    one point source at a saddle point, and the other
-    on top of a bump which goes dry.
-
-    This currently does pretty well, but it could be
-    better -- see the test thresholds near the end which
-    have been relaxed somewhat.
+    A channel, uniform bathy.
     """
     g=unstructured_grid.UnstructuredGrid(max_sides=4)
     g.add_rectilinear([0,0],[1000,100],21,3)
@@ -210,4 +202,65 @@ def test_sed_bc():
     model.run_simulation()
     return model
 
-model=test_sed_bc()
+def test_sed_mpi():
+    model=base_model()
+    
+    g=unstructured_grid.UnstructuredGrid(max_sides=4)
+    g.add_rectilinear([0,0],[1000,100],101,11)
+    g.add_cell_field('depth',-6*np.ones(g.Ncells()))
+
+    model.set_grid(g)
+
+    model.num_procs=4
+    model.config['dt']=3.
+
+    # slow down the settling velocities to get some advection mixed in
+    model.config['Ws01']= 0.0001     # constant settling velocity for fraction No.1 (m/s)
+    model.config['Ws02']= 0.0005     # constant settling velocity for fraction No.2
+    model.config['Ws03']=-0.0005     # constant settling velocity for fraction No.3
+
+    geom=np.array([ [1000,0],
+                    [1000,100]])
+    Q_bc=sun_driver.FlowBC(name="Q_bc",
+                           geom=geom,
+                           Q=100.0)
+    
+    model.add_bcs( [Q_bc,
+                    sun_driver.ScalarBC(parent=Q_bc,scalar="S",value=2),
+                    sun_driver.ScalarBC(parent=Q_bc,scalar="T",value=0)] )
+
+    point_bc=sun_driver.SourceSinkBC(name="bedPoint",
+                                     geom=np.array([500,20]),
+                                     Q=10)
+    model.add_bcs( [point_bc,
+                    sun_driver.ScalarBC(parent=point_bc,scalar="S",value=3),
+                    sun_driver.ScalarBC(parent=point_bc,scalar="T",value=3)] )
+                    
+    model.write()
+
+    # leave some dry layers at the surface
+    model.ic_ds.eta.values[:]=model.bcs[0].z
+    model.ic_ds.salt.values[:]=1.0
+    model.ic_ds.temp.values[:]=1.0
+
+    model.write_ic_ds()
+        
+    for sed_idx in range(3):
+        name="sed%d"%(sed_idx+1)
+        model.bc_ds['boundary_'+name]=model.bc_ds['boundary_S'].copy()
+        model.bc_ds[name]=model.bc_ds['S'].copy()
+        model.bc_ds['point_'+name]=model.bc_ds['point_S'].copy()
+        
+        model.bc_ds['boundary_'+name].values[:]=sed_idx*1.0
+        model.bc_ds[name].values[:]=0.0
+        model.bc_ds['point_'+name].values[:]=sed_idx*2.0
+
+    model.write_bc_ds()
+    
+    model.partition()
+    model.sun_verbose_flag='-v'
+    model.run_simulation()
+    return model
+    
+
+model=test_sed_mpi()
