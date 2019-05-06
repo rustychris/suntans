@@ -912,7 +912,6 @@ void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **
       met->tau_y[i] = rhoa * Cd * Umag * (met->Vwind[i] - phys->vc[i][ktop]);
     }
 
-
     // Check for nans and dump the inputs
     for(n=0;n<8;n++){
     	if(x[n]!=x[n]){

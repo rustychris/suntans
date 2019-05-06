@@ -224,22 +224,24 @@ void UpdateAverageVariables(gridT *grid, averageT *average, physT *phys, metT *m
     //average->s_dz[i]=sdz; 
     //average->T_dz[i]=Tdz; 
 
-    if(prop->metmodel>0 && prop->metmodel<4){
-	average->Uwind[i]+=met->Uwind[i];
-	average->Vwind[i]+=met->Vwind[i];
-	average->Tair[i]+=met->Tair[i];
-	average->Pair[i]+=met->Pair[i];
-	average->rain[i]+=met->rain[i];
-	average->RH[i]+=met->RH[i];
-	average->cloud[i]+=met->cloud[i];
-	average->Hs[i]+=met->Hs[i]*V0;
-	average->Hl[i]+=met->Hl[i]*V0;
-	average->Hlw[i]+=met->Hlw[i]*V0;
-	average->Hsw[i]+=met->Hsw[i]*V0;
-	average->tau_x[i]+=met->tau_x[i];
-	average->tau_y[i]+=met->tau_y[i];
-	average->EP[i]+=met->EP[i]*phys->s[i][grid->ctop[i]]*V0; // Surface salt flux 
-    }
+    if( prop->metmodel>0 ) {
+      average->Uwind[i]+=met->Uwind[i];
+      average->Vwind[i]+=met->Vwind[i];
+      average->Tair[i]+=met->Tair[i];
+      if ( prop->metmodel<4 ) {
+        average->Pair[i]+=met->Pair[i];
+        average->rain[i]+=met->rain[i];
+        average->RH[i]+=met->RH[i];
+        average->cloud[i]+=met->cloud[i];
+        average->Hs[i]+=met->Hs[i]*V0;
+        average->Hl[i]+=met->Hl[i]*V0;
+        average->Hlw[i]+=met->Hlw[i]*V0;
+        average->Hsw[i]+=met->Hsw[i]*V0;
+        average->tau_x[i]+=met->tau_x[i];
+        average->tau_y[i]+=met->tau_y[i];
+        average->EP[i]+=met->EP[i]*phys->s[i][grid->ctop[i]]*V0; // Surface salt flux
+      }
+    } 
   }
 
   for(jptr=grid->edgedist[0];jptr<grid->edgedist[4];jptr++) {

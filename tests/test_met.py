@@ -77,6 +77,40 @@ def test_met_quiescent():
     model.sun_verbose_flag='-v'
     model.run_simulation()
     return model
-    
 
-model=test_met_quiescent()
+
+def test_met_nudge():
+    """
+    test metmodel=5, nudge to Tair
+    This runs, has some minor w oscillations, but otherwise
+    behaves.
+    """
+    model=base_model()
+    model.run_start=np.datetime64("2018-06-10 00:00")
+    model.run_stop =np.datetime64("2018-06-20 00:00")
+
+    model.config['metmodel']=5
+    model.config['rstretch']=1.1
+
+    # quiescent first:
+    model.bcs=[]
+    
+    model.write()
+
+    # leave some dry layers at the surface
+    model.ic_ds.eta.values[:]=-1.0
+    model.ic_ds.salt.values[:]=34.0
+    model.ic_ds.temp.values[:]=10.0
+    
+    model.write_ic_ds()
+
+    model.met_ds['Tair'].values[:]=20
+    model.write_met_ds()
+    
+    model.partition()
+    model.sun_verbose_flag='-v'
+    model.run_simulation()
+    return model
+
+
+model=test_met_nudge()
