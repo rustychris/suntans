@@ -747,7 +747,8 @@ void FindNearestMetStations(propT *prop, gridT *grid, metinT **metin, int myproc
 *
 * Computed terms are stored in the met structure array
 *
-* These routines are activated when "metmodel" = 2 or 3 in suntans.dat
+* These routines are activated when "metmodel" >= 2 in suntans.dat
+* (note this gets called from HeatSources *and* from phys.c)
 */ 
 void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **T){
   
@@ -792,7 +793,7 @@ void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **
 
   
   //if(myproc==0) printf(" j, Hs, Hl, tau, Hlw, Hsw\n"); 
- // for(j=0;j<Nc;j++){
+  // for(j=0;j<Nc;j++){
  for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i = grid->cellp[iptr];  
     ktop = grid->ctop[i];
@@ -908,6 +909,10 @@ void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **
     } else if(prop->metmodel>=3){// Compute fluxes with constant parameters
       met->Hs[i] = - rhoa * cpa * Ch * Umag * (x[2] - x[3]);//T_w > T_a -> Hs is negative
       met->Hl[i] = - rhoa * Lv * Ce * Umag * (x[4] - x[5]);
+
+      // Large and Pond, 1981
+      if(Umag<11.0) Cd=1.2e-3;
+      else Cd=0.49e-3 + 0.065e-3*Umag;
       met->tau_x[i] = rhoa * Cd * Umag * (met->Uwind[i] - phys->uc[i][ktop]); 
       met->tau_y[i] = rhoa * Cd * Umag * (met->Vwind[i] - phys->vc[i][ktop]);
     }

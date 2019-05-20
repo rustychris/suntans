@@ -373,83 +373,53 @@ void WindStress(gridT *grid, physT *phys, propT *prop, metT *met, int myproc) {
   int Nc=grid->Nc; 
   int i,iptr, nf, ne, nc1, nc2, neigh;
   REAL dgf, def1, def2, rampfac;
-
+  
   if(prop->thetaramptime>0){
-      rampfac = 1-exp(-prop->rtime/prop->thetaramptime);//Rampup factor 
+    rampfac = 1-exp(-prop->rtime/prop->thetaramptime);//Rampup factor 
   }else{
-      rampfac = 1.0;
+    rampfac = 1.0;
   }
-
-   if(prop->metmodel>=2){// Interpoalte the spatially variable wind stress onto the edges
-       //Loop through edges and find the cell neighbours
-       // computational edges
-       for(jptr=grid->edgedist[0];jptr<grid->edgedist[1];jptr++) {
-	   j = grid->edgep[jptr]; 
-
-	   nc1 = grid->grad[2*j];
-	   nc2 = grid->grad[2*j+1];
-	   if(nc1==-1) nc1=nc2;
-	   if(nc2==-1) nc2=nc1;
-
-	   // Note that dgf==dg only when the cells are orthogonal!
-	   def1 = grid->def[nc1*grid->maxfaces+grid->gradf[2*j]];
-	   def2 = grid->def[nc2*grid->maxfaces+grid->gradf[2*j+1]];
-	   dgf = def1+def2;
-
-	    //This assume cells are orthogonal
-	    //   phys->tau_T[ne] = (met->tau_x[nc1]*def1/grid->dg[ne] +
-	    //	   met->tau_x[nc2]*def2/grid->dg[ne])*grid->n1[ne] + 
-	    //       (met->tau_y[nc1]*def1/grid->dg[ne] + 
-	    //	met->tau_y[nc2]*def2/grid->dg[ne])*grid->n2[ne];  
-
-	    def1 /= dgf;
-	    def2 /= dgf;
-	    phys->tau_T[j] = (met->tau_x[nc2]*def1 + met->tau_x[nc1]*def2)*grid->n1[j] + 
-		(met->tau_y[nc2]*def1 + met->tau_y[nc1]*def2)*grid->n2[j];  
-
-	   phys->tau_T[j] /= RHO0; 
-	   phys->tau_T[j] *= rampfac;
-       }
-
-       /* Looping through cells
-       for(i=0;i<Nc;i++){
-	  for(nf=0;nf<grid->nfaces[i];nf++) {
-	      //if((neigh=grid->neigh[i*grid->maxfaces+nf])!=-1) {
-		  ne = grid->face[i*grid->maxfaces+nf];
-
-		  nc1 = grid->grad[2*ne];
-		  nc2 = grid->grad[2*ne+1];
-
-		  //def1 = grid->def[nc1*NFACES+grid->gradf[2*ne]];
-		  //def2 = grid->def[nc2*NFACES+grid->gradf[2*ne+1]];
-		  if(nc1 != -1 && nc2 != -1){
-		      if( grid->gradf[2*ne]==-1 || grid->gradf[2*ne+1]==-1)
-			  printf("Warning gradf==-1, nc1 = %d, nc2 = %d\n",nc1,nc2);
-		      def1 = grid->def[nc1*grid->maxfaces+grid->gradf[2*ne]];
-		      def2 = grid->def[nc2*grid->maxfaces+grid->gradf[2*ne+1]];
-		      //printf("nc1=%d, nc2=%d, ne=%d, grid->gradf[2*ne] = %d, grid->gradf[2*ne+1] = %d\n",nc1,nc2,ne,grid->gradf[2*ne],grid->gradf[2*ne+1]);
-
-		      phys->tau_T[ne] = (met->tau_x[nc1]*def1/grid->dg[ne] +
-			  met->tau_x[nc2]*def2/grid->dg[ne])*grid->n1[ne] + 
-			  (met->tau_y[nc1]*def1/grid->dg[ne] + 
-			  met->tau_y[nc2]*def2/grid->dg[ne])*grid->n2[ne];  
-
-		      phys->tau_T[ne] /= RHO0; 
-		      phys->tau_T[ne] *= rampfac;
-		  }
-	      }
-	  //}//end if
-       }
-       */
-   }else{// Set stress to constant
-
-      for(jptr=grid->edgedist[0];jptr<grid->edgedist[5];jptr++) {
-	j = grid->edgep[jptr];
-
-	phys->tau_T[j]=grid->n2[j]*prop->tau_T;
-	phys->tau_B[j]=0;
-      }
+  
+  if(prop->metmodel>0){
+    // Interpolate the spatially variable wind stress onto the edges
+    //Loop through edges and find the cell neighbours
+    // computational edges
+    for(jptr=grid->edgedist[0];jptr<grid->edgedist[1];jptr++) {
+      j = grid->edgep[jptr]; 
+      
+      nc1 = grid->grad[2*j];
+      nc2 = grid->grad[2*j+1];
+      if(nc1==-1) nc1=nc2;
+      if(nc2==-1) nc2=nc1;
+      
+      // Note that dgf==dg only when the cells are orthogonal!
+      def1 = grid->def[nc1*grid->maxfaces+grid->gradf[2*j]];
+      def2 = grid->def[nc2*grid->maxfaces+grid->gradf[2*j+1]];
+      dgf = def1+def2;
+      
+      //This assume cells are orthogonal
+      //   phys->tau_T[ne] = (met->tau_x[nc1]*def1/grid->dg[ne] +
+      //	   met->tau_x[nc2]*def2/grid->dg[ne])*grid->n1[ne] + 
+      //       (met->tau_y[nc1]*def1/grid->dg[ne] + 
+      //	met->tau_y[nc2]*def2/grid->dg[ne])*grid->n2[ne];  
+      
+      def1 /= dgf;
+      def2 /= dgf;
+      phys->tau_T[j] = (met->tau_x[nc2]*def1 + met->tau_x[nc1]*def2)*grid->n1[j] + 
+        (met->tau_y[nc2]*def1 + met->tau_y[nc1]*def2)*grid->n2[j];  
+      
+      phys->tau_T[j] /= RHO0; 
+      phys->tau_T[j] *= rampfac;
     }
+  }else{
+    // Set stress to constant
+    for(jptr=grid->edgedist[0];jptr<grid->edgedist[5];jptr++) {
+      j = grid->edgep[jptr];
+
+      phys->tau_T[j]=grid->n2[j]*prop->tau_T;
+      phys->tau_B[j]=0;
+    }
+  }
 }
 
 /*

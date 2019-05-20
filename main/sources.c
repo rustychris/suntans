@@ -379,7 +379,6 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
     REAL F_SW;
     REAL dT;
     
-    
     // for(j=0;j<grid->Nc;j++){
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
       i = grid->cellp[iptr];
@@ -532,8 +531,7 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
         B[i][k]=0;
       }
     }    
-  }else{ // metmodel==0 or 4, >5      Set flux terms to zero
-    //for(i=0;i<grid->Nc;i++)
+  }else{ // metmodel==0, 4, or >5      Set flux terms to zero
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
       i = grid->cellp[iptr];
       for(k=0;k<grid->Nk[i];k++){
