@@ -17,10 +17,12 @@
  * 
  */
 #include "suntans.h"
+#include "memory.h"
 #include "mympi.h"
 #include "grid.h"
 #include "gridio.h"
 #include "phys.h"
+#include "sediments.h"
 #include "physio.h"
 #include "report.h"
 
@@ -49,13 +51,14 @@ int main(int argc, char *argv[])
     InitializeVerticalGrid(&grid,myproc);
     AllocatePhysicalVariables(grid,&phys,prop);
     AllocateTransferArrays(&grid,myproc,numprocs,comm);
+    
     InitializeEdgeDepths(grid,myproc,comm,LOCAL_GRID);
     OpenFiles(prop,myproc);
     if(RESTART)
       ReadPhysicalVariables(grid,phys,prop,myproc,comm);
     else
       InitializePhysicalVariables(grid,phys,prop,myproc,comm);
-
+    
     Solve(grid,phys,prop,myproc,numprocs,comm);
     //    FreePhysicalVariables(grid,phys,prop);
     //    FreeTransferArrays(grid,myproc,numprocs,comm);

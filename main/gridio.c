@@ -217,6 +217,8 @@ void WriteEdgeDepths(gridT *grid,int myproc, grid_type_t grid_type) {
 // populate grid->de[].  This must be done after ReadGrid and AllocateTransferArrays,
 // since edge depths may be chosen from cell depths, and for marker 6 edges that
 // requires some interprocessor communication.
+// Note that dz is not yet set, so if stairstep is enabled, cell depths will later
+// get updated, while these edge depths will not.
 void InitializeEdgeDepths(gridT *grid,int myproc,MPI_Comm comm,grid_type_t grid_type) {
   int n,nc1,nc2;
   char str[BUFFERLENGTH];

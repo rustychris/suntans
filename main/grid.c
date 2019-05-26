@@ -522,7 +522,10 @@ void GetDepth(gridT *grid, int myproc, int numprocs, MPI_Comm comm)
   if(Nkmax>1) {
     if(mindepth!=maxdepth) 
       for(n=0;n<grid->Nc;n++) {
-        grid->vwgt[n]=(int)(maxgridweight*(float)GetNk(dz,grid->dv[n],Nkmax)/(float)Nkmax);
+        // RH: trying to force it to think harder about cuts around shallow cells
+        // it also roughly captures the idea that a lot of the work is in the CG solve
+        // which is in 2D, so the cost per cell is roughly constant.
+        grid->vwgt[n]=(int)(0.5*maxgridweight + maxgridweight*(float)GetNk(dz,grid->dv[n],Nkmax)/(float)Nkmax);
         //	grid->vwgt[n] = (int)(maxgridweight*(grid->dv[n]-mindepth)/(maxdepth-mindepth));
     } else
       for(n=0;n<grid->Nc;n++) 
@@ -1520,28 +1523,12 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
       }
     
     for(i=0;i<(*localgrid)->Nc;i++) {
-      // RH bad loop body. REMOVE once the test below passes
-      if((*localgrid)->dv[i]==dmax) 
-        (*localgrid)->Nk[i] = (*localgrid)->Nkmax;
-      else {
-        dmaxtest=0;
-        for(k=0;k<(*localgrid)->Nkmax;k++) {
-          // add up the cumulative cell depth until it exceeds the actual depth
-          dmaxtest+=(*localgrid)->dz[k];
-          (*localgrid)->Nk[i] = k+1;
-          if(dmaxtest>=(*localgrid)->dv[i]) 
-            break;
-        }
-      }
-      // RH: testing before dropping the above loop.
-      if ( (*localgrid)->Nk[i] != maingrid->Nk[(*localgrid)->mnptr[i]] ) {
-        printf("WHOA - those should have been equal but they're not\n");
-        exit(1);
-      }
+      // RH this used to recalculate Nk locally, but
+      // we already have the information globally, so why not
+      // just use the global value?
+      (*localgrid)->Nk[i] = maingrid->Nk[(*localgrid)->mnptr[i]];
     }
-  } 
-  // 2D problem
-  else {
+  } else { // 2D problem
     for(i=0;i<maingrid->Nc;i++)
       maingrid->Nk[i] = maingrid->Nkmax;
     for(i=0;i<(*localgrid)->Nc;i++)
@@ -1561,7 +1548,7 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
   }
   
   // To use stair-stepping do this (not partial-stepping).
-  if(stairstep) 
+  if(stairstep) {
     for(i=0;i<(*localgrid)->Nc;i++) {
       dmaxtest=0;
       for(k=0;k<(*localgrid)->Nk[i];k++)
@@ -1569,11 +1556,13 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
       // depth adjusted for cell disctretization in vertical
       (*localgrid)->dv[i]=dmaxtest;
     }
+  }
 
   // over all the local grid edges 
   for(j=0;j<(*localgrid)->Ne;j++) {
     // get global grid pointers
     ne = (*localgrid)->eptr[j];
+
     // if the neighboring cell is a ghost cell
     if(maingrid->grad[2*ne]==-1) {
       // set Nke = Nke = Nk for cell not ghost
@@ -1616,6 +1605,7 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
   // a postprocessing step to avoid changing too much code and
   // to make sure that de only decreases the number of layers
   // at an edge
+  // this also where stairstepping is optionally applied to edges.
   if( (*localgrid)->Nkmax>1 ) {
     for(j=0;j<(*localgrid)->Ne;j++) {
       if((*localgrid)->de[j]==dmax) {
@@ -1629,12 +1619,18 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
           if(dmaxtest>=(*localgrid)->de[j]) 
             break;
         }
+        // RH 2019-01-16: pretty sure about this..
+        if(stairstep) {
+          // depth adjusted for cell disctretization in vertical
+          (*localgrid)->de[j]=dmaxtest;
+        }
       }
       if( ne<(*localgrid)->Nke[j] )
         (*localgrid)->Nke[j]=ne;
     }
   }
 
+  
   /* compute Nkp for the number of layers for each node */
   // for each node
   for(i = 0; i < (*localgrid)->Np; i++) {

@@ -105,7 +105,7 @@ static REAL UFaceFlux(int j, int k, REAL **phi, REAL **u, gridT *grid, REAL dt,
     int method);
 static REAL HFaceFlux(int j, int k, REAL *phi, REAL **u, gridT *grid, REAL dt, 
     int method);
-void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option);
+void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option, int myproc);
 static void GetMomentumFaceValues(REAL **uface, REAL **ui, REAL **boundary_ui, REAL **U, gridT *grid, physT *phys, propT *prop, MPI_Comm comm, int myproc, int nonlinear);
 static void getTsurf(gridT *grid, physT *phys);
 static void getchangeT(gridT *grid, physT *phys);
@@ -147,7 +147,8 @@ void AllocatePhysicalVariables(gridT *grid, physT **phys, propT *prop)
   (*phys)->ut = (REAL **)SunMalloc(Ne*sizeof(REAL *),"AllocatePhysicalVariables");
   (*phys)->Cn_U = (REAL **)SunMalloc(Ne*sizeof(REAL *),"AllocatePhysicalVariables");
   (*phys)->Cn_U2 = (REAL **)SunMalloc(Ne*sizeof(REAL *),"AllocatePhysicalVariables"); //AB3
-
+  (*phys)->limiting_cell = (int *)SunMalloc(Nc*sizeof(int),"AllocatePhysicalVariables");
+  (*phys)->min_time_step = (REAL *)SunMalloc(Nc*sizeof(REAL),"AllocatePhysicalVariables");
 
   // for each variable in plan consider the number of layers it affects
   for(j=0;j<Ne;j++) {
@@ -577,7 +578,7 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
   // The 1 indicates that this is the first call to UpdateDZ
   UpdateDZ(grid,phys,prop, 1,myproc);
 
-  // initailize variables to 0 (except for filter "pressure")
+  // initialize variables to 0 (except for filter "pressure")
   for(i=0;i<Nc;i++) {
     phys->w[i][grid->Nk[i]]=0;
     for(k=0;k<grid->Nk[i];k++) {
@@ -641,7 +642,9 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
       }
     }
   }
- 
+
+  // Sediment initial condition is inside InitializeSediment
+  
   // Initialize the velocity field 
   for(j=0;j<grid->Ne;j++) {
     z = 0;
@@ -722,6 +725,14 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
       }
     }
   }
+
+  // tracking how often each cell is the most limiting for timestep
+  for(i=0;i<grid->Nc;i++) {
+    phys->limiting_cell[i]=0;
+    // and what each cell's minimum time step has been
+    phys->min_time_step[i]=1e6;
+  }
+  
   // Free the scratch array
   if (prop->readinitialnc>0)
       SunFree(ncscratch,Nki*Nci*sizeof(REAL),"InitializePhyiscalVariables");
@@ -1008,7 +1019,7 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
   // grid->etop and dzf are set in SetFluxHeight
   // RH: move this here so that dzz and dzf are kept consistent,
   // including etopold, dzfold as copied below
-  SetFluxHeight(grid,phys,prop,option);
+  SetFluxHeight(grid,phys,prop,option,myproc);
   
   // If this is an initial call set the old values to the new values.
   if(option) {
@@ -1036,6 +1047,17 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
     for(k=0;k<grid->Nk[i];k++)
       printf("[p=%d c=%d k=% 2d]   dzz=%.5f  dzzold=%.5f\n",
              myproc,i,k, grid->dzz[i][k], grid->dzzold[i][k]);
+  }
+#endif
+
+#if defined(DBG_PROC) && defined(DBG_EDGE)
+  if(myproc==DBG_PROC) {
+    j=DBG_EDGE;
+    printf("[p=%d j=%d] end of UpdateDZ, etop=%d  etopold=%d\n",
+           myproc,j,grid->etop[j], grid->etopold[j]);
+    for(k=0;k<grid->Nke[j];k++)
+      printf("[p=%d j=%d k=% 2d]   dzf=%.5f  dzfold=%.5f\n",
+             myproc,j,k, grid->dzf[j][k], grid->dzfold[j][k]);
   }
 #endif
 }
@@ -1128,6 +1150,17 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
   // set the height of the face bewteen cells to compute the flux
   // RH: SetFluxHeight is now wrapped inside UpdateDZ to keep dzz and dzf
   //     consistent
+  if(prop->computeSediments) {
+    // allocate and initialize all the sediment variables
+    sediments=(sedimentsT *)SunMalloc(sizeof(sedimentsT),"ComputeSediments");
+    ReadSediProperties(myproc);
+    OpenSediFiles(prop,myproc); 
+    AllocateSediment(grid,myproc);  
+    InitializeSediment(grid,phys,prop,myproc);
+
+    // And go ahead and prep for first step
+    BoundarySediment(grid,phys,prop,myproc,comm);
+  }
   
   // set the drag coefficients for bottom friction
   SetDragCoefficients(grid,phys,prop);
@@ -1187,6 +1220,32 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
     InitializeMerging(grid,prop->outputNetcdf,numprocs,myproc,comm);
   }
 
+  // RH write out initial condition for completeness and debugging
+  // Write to binary
+  prop->n=prop->nstart;
+  OutputPhysicalVariables(grid,phys,prop,myproc,numprocs,blowup,comm);
+  if (prop->outputNetcdf!=0){
+    // Output data to netcdf
+    if(prop->mergeArrays){
+      WriteOutputNCmerge(prop, grid, phys, met, blowup,numprocs,myproc,comm);
+    }else{
+      WriteOutputNC(prop, grid, phys, met, blowup, myproc);
+    }
+  }
+  // Output the average arrays -- these are probably meaningless in this step, but
+  // this keeps the average output and map output the same size.
+  // it also means that a specific index of average output i is integrating over
+  // the time step [i-1,i].
+  if(prop->calcaverage){
+    if(prop->mergeArrays){
+      WriteAverageNCmerge(prop,grid,average,phys,met,blowup,numprocs,comm,myproc);
+    }else{
+      WriteAverageNC(prop,grid,average,phys,met,blowup,comm,myproc);
+    }
+  }
+  
+  // /RH
+  
   // main time loop
   for(n=prop->nstart+1;n<=prop->nsteps+prop->nstart;n++) {
 
@@ -1391,8 +1450,13 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       } 
       t_nonhydro+=Timer()-t0;
 
-      // Send/recv the vertical velocity data 
+      // Send/recv the vertical velocity data
+      // RH: seems that w will only differ from wnew by nonhydrostatic calculation.
+      // still need w, since the momentum code uses it for advection.  This could
+      // be streamlined by only recalculating Continuity when nonhydrostatic, and
+      // otherwise just copy or alias w.  Another day.
       Continuity(phys->w,grid,phys,prop);
+      PointSourcesContinuity(phys->w,grid,phys,prop,myproc,comm);
       ISendRecvWData(phys->w,grid,myproc,comm);
 
       // Set scalar and wind stress boundary values at new time step n; 
@@ -1401,6 +1465,9 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       // boundary velocities to the new time step values for use in the 
       // free surface calculation.
       BoundaryScalars(grid,phys,prop,myproc,comm);
+      if(prop->computeSediments) {
+        BoundarySediment(grid,phys,prop,myproc,comm);
+      }
       WindStress(grid,phys,prop,met,myproc);
       SetDragCoefficients(grid,phys,prop);
 
@@ -1478,11 +1545,15 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
 static void StoreVariables(gridT *grid, physT *phys) {
   int i, j, k, iptr, jptr;
 
-  for(i=0;i<grid->Nc;i++) 
+  for(i=0;i<grid->Nc;i++) {
     for(k=0;k<grid->Nk[i];k++) {
       phys->stmp3[i][k]=phys->s[i][k];
       phys->wtmp2[i][k]=phys->w[i][k];
     }
+    // for consistency, copy the bed w, too, even though it
+    // it always 0.  
+    phys->wtmp2[i][grid->Nk[i]]=phys->w[i][grid->Nk[i]];
+  }
 
   for(j=0;j<grid->Ne;j++) {
     phys->D[j]=0;
@@ -2143,7 +2214,7 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
       for(k=k0;k<grid->Nk[nc2];k++) {
         printf("  [p=%d j=%d k=% 2d c=% 2d] delta Cn_U=%.9f   stmp=%.5f, stmp2=%.5f\n",
                myproc, j, k, nc2,
-               def2/dgf*prop->dt*(phys->stmp[nc2][k]*grid->n1[j]+phys->stmp2[nc2][k]*grid->n2[j]),
+               -def2/dgf*prop->dt*(phys->stmp[nc2][k]*grid->n1[j]+phys->stmp2[nc2][k]*grid->n2[j]),
                phys->stmp[nc2][k],phys->stmp2[nc2][k]);
       }
     }
@@ -3440,7 +3511,8 @@ static void UPredictor(gridT *grid, physT *phys,
       //phys->hcorr[i]=-grid->dv[i]+DRYCELLHEIGHT-phys->h[i];
       if(phys->h[i]<=-grid->dv[i]+CLAMPHEIGHT)
         phys->h[i]=-grid->dv[i]+CLAMPHEIGHT;
-      phys->s[i][grid->Nk[i]-1]=0;
+      // RH: better to leave any concentratino here alone.
+      // phys->s[i][grid->Nk[i]-1]=0;
     } else {
       phys->hcorr[i]=0;
       phys->active[i]=1;
@@ -4704,6 +4776,7 @@ void ReadProperties(propT **prop, gridT *grid, int myproc)
 
       (*prop)->nstepsperncfile=(int)MPI_GetValue(DATAFILE,"nstepsperncfile","ReadProperties",myproc);
       (*prop)->ncfilectr=(int)MPI_GetValue(DATAFILE,"ncfilectr","ReadProperties",myproc);
+      (*prop)->nctimectr = 0;
   }
   if((*prop)->nonlinear==2) {
     (*prop)->laxWendroff = MPI_GetValue(DATAFILE,"laxWendroff","ReadProperties",myproc);
@@ -4869,7 +4942,7 @@ void SetDensity(gridT *grid, physT *phys, propT *prop) {
  *  1: initialization, assume u is not set.
  *
  */
-void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option) {
+void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option,int myproc) {
   int i, j, k, nc1, nc2;
   REAL dz_bottom, dzsmall=grid->dzsmall;
   REAL z;
@@ -4912,7 +4985,7 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option) {
     // N.B. can start off negative
     z = phys->h[nc1] - (-grid->de[j]);
 
-    if ( z<0 ) {
+    if ( z<=0 ) {
       // Edge is dry.  All dzf already set to zero before main loop
       grid->etop[j]=grid->Nke[j];
     } else {
@@ -4934,9 +5007,12 @@ void SetFluxHeight(gridT *grid, physT *phys, propT *prop, int option) {
           }
         } else {
           // does this ever happen?
-          // this is happening on hor_snubby... FIX
-          printf("Setting dzf[j=%d][k=%d]=0, which seems very bad\n",j,k);
-          exit(1);
+          // this is happening on hor_snubby...
+          printf("[p=%d] Setting dzf[j=%d][k=%d]=0, which seems very bad\n",myproc,j,k);
+          printf("[p=%d]   -de[j]=%.4f  h[upwind i=%d]=%.4f\n",myproc,-grid->de[j],nc1,phys->h[nc1]);
+          printf("[p=%d]   etop[j]=%d  Nke[j]=%d ctop[i=%d]=%d\n",myproc,grid->etop[j],grid->Nke[j],
+                 nc1,grid->ctop[nc1]);
+          // exit(1); // harsh.  try to figure out more of what's going on.
           grid->dzf[j][k] = 0.0; // why would we want to do that?  big problem.
         }
       }

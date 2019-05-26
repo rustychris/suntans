@@ -169,7 +169,7 @@ const int ncfilectr_DEFAULT = 0;
 const REAL Lsw_DEFAULT = 2.0;
 
 //Drag and heat flux coefficients
-const REAL Cda_DEFAULT = 1.1e3;
+const REAL Cda_DEFAULT = 1.3e-3;
 const REAL Ch_DEFAULT = 1.4e3;
 const REAL Ce_DEFAULT = 1.4e3;
 

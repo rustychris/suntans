@@ -32,12 +32,12 @@ int GetDZ(REAL *dz, REAL depth, REAL localdepth, int Nkmax, int myproc) {
     if(r==1) 
       for(k=0;k<Nkmax;k++)
 	dz[k]=depth/Nkmax;
-    else if(r>1 && r<=1.1) {    
+    else if(r>1 && r<=1.3) {    
       dz[0] = depth*(r-1)/(pow(r,Nkmax)-1);
       if(VERBOSE>2) printf("Minimum vertical grid spacing is %.2f\n",dz[0]);
       for(k=1;k<Nkmax;k++) 
 	dz[k]=r*dz[k-1];
-    } else if(r>-1.1 && r<-1) {    
+    } else if(r>-1.3 && r<-1) {    
       r=fabs(r);
       dz[Nkmax-1] = depth*(r-1)/(pow(r,Nkmax)-1);
       if(VERBOSE>2) printf("Minimum vertical grid spacing is %.2f\n",dz[Nkmax-1]);

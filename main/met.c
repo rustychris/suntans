@@ -514,7 +514,7 @@ void calcInterpWeights(gridT *grid, propT *prop, REAL *xo, REAL *yo, int Ns, int
     
     int j, i, jj, ii, iptr, jptr;
     int Nc = grid->Nc;
-    const REAL inversepower = 2.2;
+    const REAL inversepower = 1.2; // RH trying something smoother than original 2.2;
     REAL sumgamma, dist, tmp;
     REAL *gamma;
     REAL **C, **Ctmp;
@@ -533,23 +533,22 @@ void calcInterpWeights(gridT *grid, propT *prop, REAL *xo, REAL *yo, int Ns, int
     
     if(prop->varmodel==0){ // Inverse distance weighting
       if(VERBOSE>1 && myproc==0) printf("Calculating interpolation weights using inverse distance weighting...\n");     
-      //for(i=0;i<Nc;i++){
-     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
-	i = grid->cellp[iptr];  
+      for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
+	i = grid->cellp[iptr];
+        // approximate min length scale for inverse distance
+        tmp=sqrt(grid->Ac[i]);
 	sumgamma=0.0;
 	for(j=0;j<Ns;j++){
-	    dist = pow(grid->xv[i]-xo[index[i][j]],2) + pow(grid->yv[i]-yo[index[i][j]],2);
-	    gamma[j] = 1.0/pow(dist,inversepower);
-	    sumgamma += gamma[j];
-	    //printf("dist = %f, sum = %f\n",dist,sumgamma);
+          dist = pow(grid->xv[i]-xo[index[i][j]],2) + pow(grid->yv[i]-yo[index[i][j]],2);
+          gamma[j] = 1.0/pow(dist+tmp,inversepower);
+          sumgamma += gamma[j];
 	}
 	for(j=0;j<Ns;j++){
-	    klambda[i][j] = gamma[j]/sumgamma;
-	    //printf("weight = %f\n",klambda[i][j]);
+          klambda[i][j] = gamma[j]/sumgamma;
 	}
       }
-    
-    //SunFree(gamma,Ns,"CalcInterpWeights");
+      
+      //SunFree(gamma,Ns,"CalcInterpWeights");
     
     }else{ // kriging
 	if(VERBOSE>1 && myproc==0)  printf("Calculating interpolation weights using kriging...\n");
@@ -748,7 +747,8 @@ void FindNearestMetStations(propT *prop, gridT *grid, metinT **metin, int myproc
 *
 * Computed terms are stored in the met structure array
 *
-* These routines are activated when "metmodel" = 2 or 3 in suntans.dat
+* These routines are activated when "metmodel" >= 2 in suntans.dat
+* (note this gets called from HeatSources *and* from phys.c)
 */ 
 void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **T){
   
@@ -793,7 +793,7 @@ void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **
 
   
   //if(myproc==0) printf(" j, Hs, Hl, tau, Hlw, Hsw\n"); 
- // for(j=0;j<Nc;j++){
+  // for(j=0;j<Nc;j++){
  for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i = grid->cellp[iptr];  
     ktop = grid->ctop[i];
@@ -804,8 +804,13 @@ void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **
 
     // Surface current speed in wind direction
     // This is the projection of the water velocity vector onto the wind velocity vector
-    //x[1] = 0.0; 
-    x[1] = fabs(phys->uc[i][ktop]*met->Uwind[i]/Umag + phys->vc[i][ktop]*met->Vwind[i]/Umag); 
+    //x[1] = 0.0;
+    if ( x[0] > 1e-10 ) {
+      x[1] = fabs(phys->uc[i][ktop]*met->Uwind[i]/Umag + phys->vc[i][ktop]*met->Vwind[i]/Umag);
+    } else {
+      // if Umag is too small, just use wind magnitude
+      x[1] = sqrt(pow(phys->uc[i][ktop],2)+pow(phys->vc[i][ktop],2));
+    }
 
     // Water temperature
     x[2] = T[i][ktop];
@@ -901,13 +906,16 @@ void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **
       //met->tau_y[j] = 1.2 * 0.0011 * x[14] * met->Vwind[j];
       //printf("%10.6f, %10.6f, %10.6f, %10.6f\n",x[6],x[15],x[14],met->Vwind[j]);
 
-    }else if(prop->metmodel>=3){// Compute fluxes with constant parameters
+    } else if(prop->metmodel>=3){// Compute fluxes with constant parameters
       met->Hs[i] = - rhoa * cpa * Ch * Umag * (x[2] - x[3]);//T_w > T_a -> Hs is negative
       met->Hl[i] = - rhoa * Lv * Ce * Umag * (x[4] - x[5]);
+
+      // Large and Pond, 1981
+      if(Umag<11.0) Cd=1.2e-3;
+      else Cd=0.49e-3 + 0.065e-3*Umag;
       met->tau_x[i] = rhoa * Cd * Umag * (met->Uwind[i] - phys->uc[i][ktop]); 
       met->tau_y[i] = rhoa * Cd * Umag * (met->Vwind[i] - phys->vc[i][ktop]);
     }
-
 
     // Check for nans and dump the inputs
     for(n=0;n<8;n++){

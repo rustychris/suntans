@@ -47,6 +47,7 @@ void GetPartitioning(gridT *maingrid, gridT **localgrid, int myproc, int numproc
      * Partition the graph and create the part array.
      */
     if(myproc==0 && VERBOSE>2) printf("Partitioning with ParMETIS_PartKway...\n");
+    // RH: That null is skipping passing edge weights.
     ParMETIS_PartKway(graph.vtxdist,graph.xadj,graph.adjncy,graph.vwgt,NULL,
 		      &wgtflag,&numflag,&numprocs,options,&edgecut,
 		      (*localgrid)->part,&comm);

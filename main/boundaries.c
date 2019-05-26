@@ -48,7 +48,8 @@ void OpenBoundaryFluxes(REAL **q, REAL **ub, REAL **ubn, gridT *grid, physT *phy
 
     ib = grid->grad[2*j];
 
-    for(k=grid->etop[j];k<grid->Nke[j];k++) 
+    // RH: This used to just zero out the entries that are immediately set below.
+    for(k=0;k<grid->etop[j];k++) 
       ub[j][k]=0;
 
     for(k=grid->etop[j];k<grid->Nke[j];k++) {
@@ -89,6 +90,7 @@ void PointSourcesContinuity(REAL **w, gridT *grid, physT *phys, propT *prop, int
   int i_src;
   int k_src;
   REAL Q;
+  REAL theta=prop->theta;
 
   for(i=0;i<bound->Npoint_source;i++) {
     i_src=bound->ind_point[i];
@@ -103,9 +105,24 @@ void PointSourcesContinuity(REAL **w, gridT *grid, physT *phys, propT *prop, int
       k_src=grid->Nk[i_src]-1;
     else if(k_src<grid->ctop[i_src])
       k_src=grid->ctop[i_src];
-    
+
+    // Theta here is tricky -
+    // Continuity is basically this:
+    // theta* (w[k]-w[k+1]) + (1-theta) (wtmp2[k]-wtmp2[k+1]) = 0
+    // plus horizontal fluxes.
+    // a mass balance over the time step with semi-implicit w.
+    // with point source, it should be
+    // theta* (w[k]-w[k+1]) + (1-theta) (wtmp2[k]-wtmp2[k+1]) - Q[k]/A= 0
+    // with Q centered on the [t,t+\Delta t] interval, while wtmp2 is at
+    // t and w is at t+\Delta t.
+    // un-rearranging:
+    // w[k]=w[k+1] - (1-theta)/theta * (wtmp2[k]-wtmp2[k+1]) + Q[k]/A/theta
+    // thus here we use 1/theta.
+    // it's a counter-intuitive, but it’s the same 1/theta factor that the
+    // horizontal fluxes get.
+
     for(k=k_src;k>=grid->ctop[i_src];k--) {
-      w[i_src][k] += Q/grid->Ac[i_src];
+      w[i_src][k] += Q/grid->Ac[i_src]/theta;
     }
   }
 }
@@ -149,7 +166,6 @@ void PointSourceSalt(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, 
   PointSourceScalar(bound->point_S,A,B,grid,phys,prop,myproc,comm);
 }
 
-
 /*
  * Function: BoundaryScalars
  * Usage: BoundaryScalars(boundary_s,boundary_T,grid,phys,prop);
@@ -176,93 +192,49 @@ void BoundaryScalars(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm
   }
   */
 
-  // Type-2
-  if(prop->netcdfBdy){
-      ii=-1;
-      for(jptr=grid->edgedist[2];jptr<grid->edgedist[3];jptr++) {
-	jind = jptr-grid->edgedist[2];
-	j = grid->edgep[jptr];
-	ib=grid->grad[2*j];
-	ii+=1;
-
-	for(k=grid->ctop[ib];k<grid->Nk[ib];k++) {
-	//for(k=grid->etop[j];k<grid->Nke[j];k++) {
-	  phys->boundary_T[jind][k]=bound->boundary_T[k][bound->ind2[ii]];
-	  phys->boundary_s[jind][k]=bound->boundary_S[k][bound->ind2[ii]];
-	  //printf("edge: %d, k : %d, boundary_s = %f\n",jind,k,phys->boundary_s[jind][k]);
-	}
+  if(prop->netcdfBdy) {
+    BoundaryScalarGeneric(phys->boundary_T, // [jptr-edgedist[2], k]
+                          phys->T, 
+                          bound->T_scal,
+                          grid,phys,prop,myproc,comm);
+    BoundaryScalarGeneric(phys->boundary_s, // [jptr-edgedist[2], k]
+                          phys->s,
+                          bound->S_scal,
+                          grid,phys,prop,myproc,comm);
+  } else {
+    //No NetCDF
+    // Type-2
+    for(jptr=grid->edgedist[2];jptr<grid->edgedist[3];jptr++) {
+      jind = jptr-grid->edgedist[2];
+      j = grid->edgep[jptr];
+      ib=grid->grad[2*j];
+      
+      for(k=grid->ctop[ib];k<grid->Nk[ib];k++) {
+        phys->boundary_T[jind][k]=0;
+        phys->boundary_s[jind][k]=0;
       }
-  }else{//No NetCDF
-      for(jptr=grid->edgedist[2];jptr<grid->edgedist[3];jptr++) {
-	jind = jptr-grid->edgedist[2];
-	j = grid->edgep[jptr];
-	ib=grid->grad[2*j];
+    }
 
-	for(k=grid->ctop[ib];k<grid->Nk[ib];k++) {
-	  phys->boundary_T[jind][k]=0;
-	  phys->boundary_s[jind][k]=0;
-	}
+    for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
+      i = grid->cellp[iptr];
+      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+        phys->T[i][k] = 0;
+        phys->s[i][k] = 0;
       }
+    }
   }
-
-  //Type-3 
-  // ???? (NEEDS TESTING)
-  // Set boundary cell to value in the boundary structure
-  if(prop->netcdfBdy){
-      ii=-1;
-      for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
-	i = grid->cellp[iptr];
-	ii+=1;
-	for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-       	// for(k=0;k<grid->Nk[i];k++){//Go from the very top
-	     phys->T[i][k] = bound->T[k][bound->ind3[ii]];
-	     phys->s[i][k] = bound->S[k][bound->ind3[ii]];
-	}
-       }
-   }else{
-      for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
-	    i = grid->cellp[iptr];
-	    for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-		 phys->T[i][k] = 0;
-		 phys->s[i][k] = 0;
-	    }
-       }
-   }
   // Need to communicate the cell data for type 3 boundaries
   ISendRecvCellData3D(phys->T,grid,myproc,comm);
   ISendRecvCellData3D(phys->s,grid,myproc,comm);
 
-   // Set the edge array to the value in the boundary array
+  // Set the edge array to the value in the boundary array
   /*
     RH: note that ind3edge is now longer than ind3, and can have more entries
     than ind3.  Not sure how that affects this code.
 
-    ii=-1;
- int myproc,int myproc,   for(jptr=grid->edgedist[3];jptr<grid->edgedist[4];jptr++) {
-    jind = jptr-grid->edgedist[2];
-    j = grid->edgep[jptr];
-    ib=grid->grad[2*j];
-    ii+=1;// This is the same as jind...
-    //printf("ii: %d, jptr: %d, jind: %d, j: %d,ind3edge[ii]: %d\n",ii, jptr,jind,j,bound->ind3edge[ii]);
-    for(k=grid->ctop[ib];k<grid->Nk[ib];k++) {
-      phys->boundary_T[jind][k]=bound->T[bound->ind3edge[ii]][k];
-      phys->boundary_s[jind][k]=bound->S[bound->ind3edge[ii]][k];
-    }
-  }
-  */
-    // Find the edge index of the boundary cell
-    /*
-    for(nf=0;nf<NFACES;nf++){ 
-	if(neigh=grid->neigh[i*NFACES+nf]==-1) {
-	     ne = grid->edgep[grid->face[i*NFACES+nf]];
-	     printf("ne: %d, grid->edgedist[3]: %d\n",ne,grid->edgedist[3]);
-	     for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-		 phys->boundary_T[grid->edgedist[3]-ne][k] = bound->T[bound->ind3[ii]][k];
-		 phys->boundary_s[grid->edgedist[3]-ne][k] = bound->S[bound->ind3[ii]][k];
-	     }
-	}
-    }
-    */
+    The code that this note preceded has been dropped, but leaving this
+    note in place out of paranoia.
+  */ 
 } // End funciton
 
 /*
@@ -283,9 +255,9 @@ void BoundaryVelocities(gridT *grid, physT *phys, propT *prop, int myproc, MPI_C
       rampfac = 1.0;
   }
 
-   // Test
-   REAL amp = 0.25;
-   REAL omega = 7.27e-5;
+  // Test
+  // REAL amp = 0.25;
+  // REAL omega = 7.27e-5;
 
    // Update the netcdf boundary data
    if(prop->netcdfBdy==1){
@@ -301,12 +273,17 @@ void BoundaryVelocities(gridT *grid, physT *phys, propT *prop, int myproc, MPI_C
     ii+=1;
 
     //phys->boundary_h[jind]=0.0; // Not used??
+    
+    for(k=0;k<grid->etop[j];k++) {
+      phys->boundary_u[jind][k]=0.0;
+      phys->boundary_v[jind][k]=0.0;
+      phys->boundary_w[jind][k]=0.0;
+    }
+    
     for(k=grid->etop[j];k<grid->Nke[j];k++) {
      phys->boundary_u[jind][k]=bound->boundary_u[k][bound->ind2[ii]]*rampfac;
      phys->boundary_v[jind][k]=bound->boundary_v[k][bound->ind2[ii]]*rampfac;
      phys->boundary_w[jind][k]=bound->boundary_w[k][bound->ind2[ii]]*rampfac;
-     // printf("edge: %d,j: %d, k : %d, boundary_u = %f\n",jind,j,k,phys->boundary_u[jind][k]);
-     // printf("bound->boundary_u[k][bound->ind2[ii]]=%f\n",bound->boundary_u[k][bound->ind2[ii]]);
     }
   }
   }else{ // No NetCDF
@@ -396,83 +373,53 @@ void WindStress(gridT *grid, physT *phys, propT *prop, metT *met, int myproc) {
   int Nc=grid->Nc; 
   int i,iptr, nf, ne, nc1, nc2, neigh;
   REAL dgf, def1, def2, rampfac;
-
+  
   if(prop->thetaramptime>0){
-      rampfac = 1-exp(-prop->rtime/prop->thetaramptime);//Rampup factor 
+    rampfac = 1-exp(-prop->rtime/prop->thetaramptime);//Rampup factor 
   }else{
-      rampfac = 1.0;
+    rampfac = 1.0;
   }
-
-   if(prop->metmodel>=2){// Interpoalte the spatially variable wind stress onto the edges
-       //Loop through edges and find the cell neighbours
-       // computational edges
-       for(jptr=grid->edgedist[0];jptr<grid->edgedist[1];jptr++) {
-	   j = grid->edgep[jptr]; 
-
-	   nc1 = grid->grad[2*j];
-	   nc2 = grid->grad[2*j+1];
-	   if(nc1==-1) nc1=nc2;
-	   if(nc2==-1) nc2=nc1;
-
-	   // Note that dgf==dg only when the cells are orthogonal!
-	   def1 = grid->def[nc1*grid->maxfaces+grid->gradf[2*j]];
-	   def2 = grid->def[nc2*grid->maxfaces+grid->gradf[2*j+1]];
-	   dgf = def1+def2;
-
-	    //This assume cells are orthogonal
-	    //   phys->tau_T[ne] = (met->tau_x[nc1]*def1/grid->dg[ne] +
-	    //	   met->tau_x[nc2]*def2/grid->dg[ne])*grid->n1[ne] + 
-	    //       (met->tau_y[nc1]*def1/grid->dg[ne] + 
-	    //	met->tau_y[nc2]*def2/grid->dg[ne])*grid->n2[ne];  
-
-	    def1 /= dgf;
-	    def2 /= dgf;
-	    phys->tau_T[j] = (met->tau_x[nc2]*def1 + met->tau_x[nc1]*def2)*grid->n1[j] + 
-		(met->tau_y[nc2]*def1 + met->tau_y[nc1]*def2)*grid->n2[j];  
-
-	   phys->tau_T[j] /= RHO0; 
-	   phys->tau_T[j] *= rampfac;
-       }
-
-       /* Looping through cells
-       for(i=0;i<Nc;i++){
-	  for(nf=0;nf<grid->nfaces[i];nf++) {
-	      //if((neigh=grid->neigh[i*grid->maxfaces+nf])!=-1) {
-		  ne = grid->face[i*grid->maxfaces+nf];
-
-		  nc1 = grid->grad[2*ne];
-		  nc2 = grid->grad[2*ne+1];
-
-		  //def1 = grid->def[nc1*NFACES+grid->gradf[2*ne]];
-		  //def2 = grid->def[nc2*NFACES+grid->gradf[2*ne+1]];
-		  if(nc1 != -1 && nc2 != -1){
-		      if( grid->gradf[2*ne]==-1 || grid->gradf[2*ne+1]==-1)
-			  printf("Warning gradf==-1, nc1 = %d, nc2 = %d\n",nc1,nc2);
-		      def1 = grid->def[nc1*grid->maxfaces+grid->gradf[2*ne]];
-		      def2 = grid->def[nc2*grid->maxfaces+grid->gradf[2*ne+1]];
-		      //printf("nc1=%d, nc2=%d, ne=%d, grid->gradf[2*ne] = %d, grid->gradf[2*ne+1] = %d\n",nc1,nc2,ne,grid->gradf[2*ne],grid->gradf[2*ne+1]);
-
-		      phys->tau_T[ne] = (met->tau_x[nc1]*def1/grid->dg[ne] +
-			  met->tau_x[nc2]*def2/grid->dg[ne])*grid->n1[ne] + 
-			  (met->tau_y[nc1]*def1/grid->dg[ne] + 
-			  met->tau_y[nc2]*def2/grid->dg[ne])*grid->n2[ne];  
-
-		      phys->tau_T[ne] /= RHO0; 
-		      phys->tau_T[ne] *= rampfac;
-		  }
-	      }
-	  //}//end if
-       }
-       */
-   }else{// Set stress to constant
-
-      for(jptr=grid->edgedist[0];jptr<grid->edgedist[5];jptr++) {
-	j = grid->edgep[jptr];
-
-	phys->tau_T[j]=grid->n2[j]*prop->tau_T;
-	phys->tau_B[j]=0;
-      }
+  
+  if(prop->metmodel>0){
+    // Interpolate the spatially variable wind stress onto the edges
+    //Loop through edges and find the cell neighbours
+    // computational edges
+    for(jptr=grid->edgedist[0];jptr<grid->edgedist[1];jptr++) {
+      j = grid->edgep[jptr]; 
+      
+      nc1 = grid->grad[2*j];
+      nc2 = grid->grad[2*j+1];
+      if(nc1==-1) nc1=nc2;
+      if(nc2==-1) nc2=nc1;
+      
+      // Note that dgf==dg only when the cells are orthogonal!
+      def1 = grid->def[nc1*grid->maxfaces+grid->gradf[2*j]];
+      def2 = grid->def[nc2*grid->maxfaces+grid->gradf[2*j+1]];
+      dgf = def1+def2;
+      
+      //This assume cells are orthogonal
+      //   phys->tau_T[ne] = (met->tau_x[nc1]*def1/grid->dg[ne] +
+      //	   met->tau_x[nc2]*def2/grid->dg[ne])*grid->n1[ne] + 
+      //       (met->tau_y[nc1]*def1/grid->dg[ne] + 
+      //	met->tau_y[nc2]*def2/grid->dg[ne])*grid->n2[ne];  
+      
+      def1 /= dgf;
+      def2 /= dgf;
+      phys->tau_T[j] = (met->tau_x[nc2]*def1 + met->tau_x[nc1]*def2)*grid->n1[j] + 
+        (met->tau_y[nc2]*def1 + met->tau_y[nc1]*def2)*grid->n2[j];  
+      
+      phys->tau_T[j] /= RHO0; 
+      phys->tau_T[j] *= rampfac;
     }
+  }else{
+    // Set stress to constant
+    for(jptr=grid->edgedist[0];jptr<grid->edgedist[5];jptr++) {
+      j = grid->edgep[jptr];
+
+      phys->tau_T[j]=grid->n2[j]*prop->tau_T;
+      phys->tau_B[j]=0;
+    }
+  }
 }
 
 /*
@@ -485,7 +432,7 @@ void WindStress(gridT *grid, physT *phys, propT *prop, metT *met, int myproc) {
 void InitBoundaryData(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
 
     // Step 1) Allocate the structure array data
-	// Moved to phys.c
+    // Moved to phys.c
 
     // Step 2) Read in the coordinate info
     if(VERBOSE>1 && myproc==0) printf("Reading netcdf boundary coordinate data...\n");
@@ -508,7 +455,8 @@ void InitBoundaryData(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
   *
   */     
 void UpdateBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
-  int n, j, k, t0, t1, t2; 
+  int n, j, k, t0, t1, t2;
+  int scal_idx;
   REAL dt, r1, r2, mu;
   if(VERBOSE>2) {
     printf("[p=%d] top of UpdateBdyNC\n",myproc);
@@ -525,7 +473,6 @@ void UpdateBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
     bound->t1=t1;
     bound->t2=t2;
     bound->t0=t0;
-    //printf("myproc: %d, bound->t0: %d, nctime: %f, rtime: %f \n",myproc,bound->t0, prop->nctime, prop->rtime);
     ReadBdyNC(prop, grid, myproc,comm);
     //Try this to avoid parallel read errors
     /*
@@ -553,58 +500,75 @@ void UpdateBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
     //r2 = (1.0 - cos(PI*mu))/2.0;
     //r1 = 1.0-r2;
 
-//    if (myproc==0) printf("t1: %f, %t2: %f, tnow:%f, ,mu %f, r2: %f, r1: %f\n",bound->time[bound->t0],bound->time[bound->t1], prop->nctime, mu, r2, r1);
-    if(bound->hasType2>0){
-	//printf("Updating type-2 boundaries on proc %d\n",myproc);
-	for (j=0;j<bound->Ntype2;j++){
-	  for (k=0;k<bound->Nk;k++){
-	    //Quadratic temporal interpolation
-	    bound->boundary_u[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->boundary_u_t[0][k][j],bound->boundary_u_t[1][k][j],bound->boundary_u_t[2][k][j] );
-	    bound->boundary_v[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->boundary_v_t[0][k][j],bound->boundary_v_t[1][k][j],bound->boundary_v_t[2][k][j] );
-	    bound->boundary_w[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->boundary_w_t[0][k][j],bound->boundary_w_t[1][k][j],bound->boundary_w_t[2][k][j] );
-	    bound->boundary_T[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->boundary_T_t[0][k][j],bound->boundary_T_t[1][k][j],bound->boundary_T_t[2][k][j] );
-	    bound->boundary_S[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->boundary_S_t[0][k][j],bound->boundary_S_t[1][k][j],bound->boundary_S_t[2][k][j] );
-	  }
-	}
+  if(bound->hasType2>0){
+    //printf("Updating type-2 boundaries on proc %d\n",myproc);
+    for (j=0;j<bound->Ntype2;j++){
+      for (k=0;k<bound->Nk;k++){
+        //Quadratic temporal interpolation
+        bound->boundary_u[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],
+                                             bound->boundary_u_t[0][k][j],bound->boundary_u_t[1][k][j],bound->boundary_u_t[2][k][j] );
+        bound->boundary_v[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],
+                                             bound->boundary_v_t[0][k][j],bound->boundary_v_t[1][k][j],bound->boundary_v_t[2][k][j] );
+        bound->boundary_w[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],
+                                             bound->boundary_w_t[0][k][j],bound->boundary_w_t[1][k][j],bound->boundary_w_t[2][k][j] );
+        for(scal_idx=0;scal_idx<bound->num_scalars;scal_idx++) {
+          bound->scalars[scal_idx].boundary_scal[k][j] =
+            QuadInterp(prop->nctime,
+                       bound->time[t0],bound->time[t1],bound->time[t2],
+                       bound->scalars[scal_idx].boundary_scal_t[0][k][j],
+                       bound->scalars[scal_idx].boundary_scal_t[1][k][j],
+                       bound->scalars[scal_idx].boundary_scal_t[2][k][j] );
+        }
+      }
     }
-    if(bound->hasType3>0){
-	//printf("Updating type-3 boundaries on proc %d\n",myproc);
-	for (j=0;j<bound->Ntype3;j++){
-	  for (k=0;k<bound->Nk;k++){
-	    // Quadratic temporal interpolation
-	    //printf("bound->S[0][0] = %f\n",bound->S[0][0]);
-	    //printf("bound->S_t[1][0][0] = %f, bound->S[0][0] = %f\n",bound->S_t[1][0][0],bound->S[0][0]);
-	    bound->uc[k][j] = bound->uc_t[1][k][j];
-	    bound->uc[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->uc_t[0][k][j],bound->uc_t[1][k][j],bound->uc_t[2][k][j]);
-	    bound->vc[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->vc_t[0][k][j],bound->vc_t[1][k][j],bound->vc_t[2][k][j]);
-	    bound->wc[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->wc_t[0][k][j],bound->wc_t[1][k][j],bound->wc_t[2][k][j]);
-	    bound->T[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->T_t[0][k][j],bound->T_t[1][k][j],bound->T_t[2][k][j]);
-	    bound->S[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->S_t[0][k][j],bound->S_t[1][k][j],bound->S_t[2][k][j]);
-	  }
-	  bound->h[j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->h_t[0][j],bound->h_t[1][j],bound->h_t[2][j]);
-	}
+  }
+  if(bound->hasType3>0){
+    //printf("Updating type-3 boundaries on proc %d\n",myproc);
+    for (j=0;j<bound->Ntype3;j++){
+      for (k=0;k<bound->Nk;k++){
+        // Quadratic temporal interpolation
+        //printf("bound->S[0][0] = %f\n",bound->S[0][0]);
+        //printf("bound->S_t[1][0][0] = %f, bound->S[0][0] = %f\n",bound->S_t[1][0][0],bound->S[0][0]);
+        bound->uc[k][j] = bound->uc_t[1][k][j];
+        bound->uc[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],
+                                     bound->uc_t[0][k][j],bound->uc_t[1][k][j],bound->uc_t[2][k][j]);
+        bound->vc[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],
+                                     bound->vc_t[0][k][j],bound->vc_t[1][k][j],bound->vc_t[2][k][j]);
+        bound->wc[k][j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],
+                                     bound->wc_t[0][k][j],bound->wc_t[1][k][j],bound->wc_t[2][k][j]);
+        for(scal_idx=0;scal_idx<bound->num_scalars;scal_idx++) {
+          bound->scalars[scal_idx].scal[k][j] =
+            QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],
+                       bound->scalars[scal_idx].scal_t[0][k][j],
+                       bound->scalars[scal_idx].scal_t[1][k][j],
+                       bound->scalars[scal_idx].scal_t[2][k][j]);
+        }
+      }
+      bound->h[j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],
+                               bound->h_t[0][j],bound->h_t[1][j],bound->h_t[2][j]);
     }
-
-    if(VERBOSE>2) {
-      printf("[p=%d] UpdateBdyNC post hasType3\n",myproc);
-    }
+  }
+  
+  if(VERBOSE>2) {
+    printf("[p=%d] UpdateBdyNC post hasType3\n",myproc);
+  }
     
-   // printf("Updating flux (Q) boundaries on proc %d\n",myproc);
-    // Interpolate Q and find the velocities based on the (dynamic) segment area
-    if(bound->hasType2 && bound->hasSeg>0){
-	for (j=0;j<bound->Nseg;j++){
-	  bound->boundary_Q[j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->boundary_Q_t[0][j],bound->boundary_Q_t[1][j],bound->boundary_Q_t[2][j]);
-          // printf("Interpolated Q[seg=%d]=%.3f\n",j,bound->boundary_Q[j]);
-	}
-	// This function does the actual conversion
-	FluxtoUV(prop,grid,myproc,comm);
+  // printf("Updating flux (Q) boundaries on proc %d\n",myproc);
+  // Interpolate Q and find the velocities based on the (dynamic) segment area
+  if(bound->hasType2 && bound->hasSeg>0){
+    for (j=0;j<bound->Nseg;j++){
+      bound->boundary_Q[j] = QuadInterp(prop->nctime,bound->time[t0],bound->time[t1],bound->time[t2],bound->boundary_Q_t[0][j],bound->boundary_Q_t[1][j],bound->boundary_Q_t[2][j]);
+      // printf("Interpolated Q[seg=%d]=%.3f\n",j,bound->boundary_Q[j]);
     }
+    // This function does the actual conversion
+    FluxtoUV(prop,grid,myproc,comm);
+  }
     
-    if(VERBOSE>2) {
-      printf("[p=%d] Finished UpdateBdyNC\n",myproc);
-    }
+  if(VERBOSE>2) {
+    printf("[p=%d] Finished UpdateBdyNC\n",myproc);
+  }
 
- }//End function
+}//End function
 
  /*
   * Function: FluxtoUV()
@@ -798,6 +762,87 @@ static void MatchBndPoints(propT *prop, gridT *grid, int myproc){
 } // End function
 
 
+// allocate the per-scalar arrays for a single scalar species, using the next unused
+// entry in bound->scalars
+scalar_boundT *AllocateBoundaryScalar(const char *name, boundT *bound, int myproc){
+  // Nt, Npoint_source;
+  int j, k, i, n;
+
+  int Nk=bound->Nk;
+  int Ntype2=bound->Ntype2;
+  int Ntype3=bound->Ntype3;
+  
+  if(bound->num_scalars==MAXSCALARS) {
+    printf("No more boundary scalar elements available. Increase MAXSCALARS (%d)\n",MAXSCALARS);
+    MPI_Finalize();
+    exit(EXIT_FAILURE);
+  }
+
+  printf("scalar %d: %s\n",bound->num_scalars, name);
+  
+  scalar_boundT *scalar=&(bound->scalars[bound->num_scalars]);
+  bound->num_scalars++;
+
+  strcpy(scalar->varname,name);
+
+  if(bound->Npoint_source) {
+    scalar->point_scal=(REAL*)SunMalloc( bound->Npoint_source*sizeof(REAL),"AllocateBoundaryScalar");
+    for(j=0;j<bound->Npoint_source;j++) {
+      scalar->point_scal[j]=0.;
+    }
+  } else {
+    scalar->point_scal=NULL;
+  }
+
+  if(bound->hasType2==1){
+    scalar->boundary_scal = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryScalar");
+    scalar->boundary_scal_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryScalar");
+    for(k=0;k<Nk;k++){
+      scalar->boundary_scal[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryScalar");
+      for(j=0;j<Ntype2;j++) {
+        scalar->boundary_scal[k][j]=0.0;
+      }
+    }      
+
+    for(n=0;n<NT;n++){
+      scalar->boundary_scal_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryScalar");
+      for(k=0;k<Nk;k++){
+        scalar->boundary_scal_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryScalar");
+        for(j=0;j<Ntype2;j++) {
+          scalar->boundary_scal_t[n][k][j]=0.0;
+        }
+      }
+    }
+  } else {
+    scalar->boundary_scal=NULL;
+    scalar->boundary_scal_t=NULL;
+  }
+
+  if(bound->hasType3==1){
+    scalar->scal = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+    scalar->scal_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
+    for(k=0;k<Nk;k++){
+      scalar->scal[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+      for(i=0;i<Ntype3;i++) {
+        scalar->scal[k][i]=0.0;
+      }
+    }
+    for(n=0;n<NT;n++){
+      scalar->scal_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
+      for(k=0;k<Nk;k++){
+        scalar->scal_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
+        for(i=0;i<Ntype3;i++) {
+          scalar->scal_t[n][k][i]=0.0;
+        }
+      }
+    }
+  } else {
+    scalar->scal=NULL;
+    scalar->scal_t=NULL;
+  }
+  
+  return scalar;
+}
 /*
  * Function: AllocateBoundaryData()
  * -------------------------------
@@ -812,7 +857,7 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
   if(VERBOSE>1 && myproc==0) printf("Allocating boundary data structure...\n");
   
   *bound = (boundT *)SunMalloc(sizeof(boundT),"AllocateBoundaryData");
-
+  
   // Read in the dimensions
   printf("Reading boundary netcdf dimensions...\n");
   Ntype3 = returndimlenBC(prop->netcdfBdyFileID,"Ntype3");
@@ -828,6 +873,7 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
   (*bound)->Nt=Nt;
   (*bound)->Nk=Nk;
   (*bound)->Npoint_source=Npoint_source;
+  (*bound)->num_scalars=0;
 
   // Check if boundary types are in the file
   if ( (*bound)->Ntype3==0 ) {
@@ -861,14 +907,19 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
     printf("hasSeg = %d\n",(*bound)->hasSeg);
   }
 
+  scalar_boundT *T_scal,*S_scal;
+  T_scal=AllocateBoundaryScalar("T",*bound,myproc);
+  S_scal=AllocateBoundaryScalar("S",*bound,myproc);
+  (*bound)->T_scal=T_scal;
+  (*bound)->S_scal=S_scal;
+  
   if((*bound)->Npoint_source) {
     (*bound)->point_cell=(int*)SunMalloc( Npoint_source*sizeof(int),"AllocateBoundaryData");
     (*bound)->point_layer=(int*)SunMalloc( Npoint_source*sizeof(int),"AllocateBoundaryData");
     (*bound)->ind_point=(int*)SunMalloc( Npoint_source*sizeof(int),"AllocateBoundaryData");
     
     (*bound)->point_Q=(REAL*)SunMalloc( Npoint_source*sizeof(REAL),"AllocateBoundaryData");
-    (*bound)->point_T=(REAL*)SunMalloc( Npoint_source*sizeof(REAL),"AllocateBoundaryData");
-    (*bound)->point_S=(REAL*)SunMalloc( Npoint_source*sizeof(REAL),"AllocateBoundaryData");
+
     for(i=0;i<(*bound)->Npoint_source;i++){
       (*bound)->ind_point[i]=-1;
       (*bound)->point_cell[i]=-1;
@@ -880,9 +931,10 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
     (*bound)->ind_point=NULL;
     
     (*bound)->point_Q=NULL;
-    (*bound)->point_T=NULL;
-    (*bound)->point_S=NULL;
   }
+  
+  (*bound)->point_T=T_scal->point_scal;
+  (*bound)->point_S=S_scal->point_scal;
   
   // Allocate the type2 arrays
   if((*bound)->hasType2==1){
@@ -894,40 +946,35 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
     (*bound)->boundary_u = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
     (*bound)->boundary_v = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
     (*bound)->boundary_w = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-    (*bound)->boundary_T = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-    (*bound)->boundary_S = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
     
     (*bound)->boundary_u_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
     (*bound)->boundary_v_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
     (*bound)->boundary_w_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-    (*bound)->boundary_T_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-    (*bound)->boundary_S_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
     
     for(k=0;k<Nk;k++){
       (*bound)->boundary_u[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
       (*bound)->boundary_v[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
       (*bound)->boundary_w[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-      (*bound)->boundary_T[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-      (*bound)->boundary_S[k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
     }
     for(n=0;n<NT;n++){
       (*bound)->boundary_u_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
       (*bound)->boundary_v_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
       (*bound)->boundary_w_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-      (*bound)->boundary_T_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-      (*bound)->boundary_S_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
       for(k=0;k<Nk;k++){
         (*bound)->boundary_u_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
         (*bound)->boundary_v_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
         (*bound)->boundary_w_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-        (*bound)->boundary_T_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
-        (*bound)->boundary_S_t[n][k] = (REAL *)SunMalloc(Ntype2*sizeof(REAL),"AllocateBoundaryData");
       }
     }
     // Allocate the pointer arrays for each processor's grid
     n2 = grid->edgedist[3]-grid->edgedist[2];
     (*bound)->ind2 = (int *)SunMalloc(n2*sizeof(int),"AllocateBoundaryData");
   }//endif
+
+  (*bound)->boundary_T_t=T_scal->boundary_scal_t;
+  (*bound)->boundary_T  =T_scal->boundary_scal;
+  (*bound)->boundary_S_t=S_scal->boundary_scal_t;
+  (*bound)->boundary_S  =S_scal->boundary_scal;
   
   // Allocate the segment arrays (subset of type2)
   if ((*bound)->hasSeg==1){
@@ -954,34 +1001,24 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
     (*bound)->uc = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
     (*bound)->vc = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
     (*bound)->wc = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-    (*bound)->T = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-    (*bound)->S = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
     
     (*bound)->uc_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
     (*bound)->vc_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
     (*bound)->wc_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-    (*bound)->T_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
-    (*bound)->S_t = (REAL ***)SunMalloc(NT*sizeof(REAL),"AllocateBoundaryData");
     
     for(k=0;k<Nk;k++){
       (*bound)->uc[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
       (*bound)->vc[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
       (*bound)->wc[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-      (*bound)->T[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-      (*bound)->S[k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
     }
     for(n=0;n<NT;n++){
       (*bound)->uc_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
       (*bound)->vc_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
       (*bound)->wc_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-      (*bound)->T_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
-      (*bound)->S_t[n] = (REAL **)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
       for(k=0;k<Nk;k++){
         (*bound)->uc_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
         (*bound)->vc_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
         (*bound)->wc_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-        (*bound)->T_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
-        (*bound)->S_t[n][k] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
       }
       (*bound)->h_t[n] = (REAL *)SunMalloc(Ntype3*sizeof(REAL),"AllocateBoundaryData");
     }
@@ -996,6 +1033,11 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
     (*bound)->ind3edge = (int *)SunMalloc(n3e*sizeof(int),"AllocateBoundaryData");
   }//endif
 
+  (*bound)->T = T_scal->scal;
+  (*bound)->S = S_scal->scal;
+  (*bound)->T_t = T_scal->scal_t;
+  (*bound)->S_t = S_scal->scal_t;
+  
   (*bound)->time = (REAL *)SunMalloc(Nt*sizeof(REAL),"AllocateBoundaryData");
   (*bound)->z = (REAL *)SunMalloc(Nk*sizeof(REAL),"AllocateBoundaryData");
 
@@ -1022,14 +1064,10 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
         (*bound)->boundary_u[k][j]=0.0;
         (*bound)->boundary_v[k][j]=0.0;
         (*bound)->boundary_w[k][j]=0.0;
-        (*bound)->boundary_T[k][j]=0.0;
-        (*bound)->boundary_S[k][j]=0.0;
         for(n=0;n>NT;n++){
           (*bound)->boundary_u_t[n][k][j]=0.0;
           (*bound)->boundary_v_t[n][k][j]=0.0;
           (*bound)->boundary_w_t[n][k][j]=0.0;
-          (*bound)->boundary_T_t[n][k][j]=0.0;
-          (*bound)->boundary_S_t[n][k][j]=0.0;
         }
       }
     }
@@ -1068,14 +1106,10 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
         (*bound)->uc[k][j]=0.0;
         (*bound)->vc[k][j]=0.0;
         (*bound)->wc[k][j]=0.0;
-        (*bound)->T[k][j]=0.0;
-        (*bound)->S[k][j]=0.0;
         for(n=0;n<NT;n++){
           (*bound)->uc_t[n][k][j]=0.0;
           (*bound)->vc_t[n][k][j]=0.0;
           (*bound)->wc_t[n][k][j]=0.0;
-          (*bound)->T_t[n][k][j]=0.0;
-          (*bound)->S_t[n][k][j]=0.0;
         }
       }
     }
@@ -1090,6 +1124,34 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
 } //End function
 
 
+void BoundaryScalarGeneric(REAL **boundary_scal, // [jptr-edgedist[2], k]
+                           REAL **scal, // [cellp,k]
+                           scalar_boundT *scalar,
+                           gridT *grid, physT *phys, propT *prop,int myproc, MPI_Comm comm) {
+  int k,i,ii,jptr,jind,j,ib,iptr;
+
+  ii=-1;
+  for(jptr=grid->edgedist[2];jptr<grid->edgedist[3];jptr++) {
+    jind = jptr-grid->edgedist[2];
+    j = grid->edgep[jptr];
+    ib=grid->grad[2*j];
+    ii+=1;
+    
+    for(k=grid->ctop[ib];k<grid->Nk[ib];k++) {
+      boundary_scal[jind][k]=scalar->boundary_scal[k][bound->ind2[ii]];
+    }
+  }
+
+  ii=-1;
+  for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
+    i = grid->cellp[iptr];
+    ii+=1;
+    for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+      scal[i][k] = scalar->scal[k][bound->ind3[ii]];
+    }
+  }
+}
+
 /*
  * Function: BoundarySediment
  * Usage: BoundarySediment(boundary_s,boundary_T,grid,phys,prop);
@@ -1098,30 +1160,39 @@ void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, 
  * at the open boundaries.
  * 
  */
-void BoundarySediment(gridT *grid, physT *phys, propT *prop) {
+void BoundarySediment(gridT *grid, physT *phys, propT *prop,int myproc, MPI_Comm comm) {
   int jptr, j, ib, k,nosize,i,iptr;
   REAL z;
 
-  // At the upstream boundary
-  for(jptr=grid->edgedist[2];jptr<grid->edgedist[3];jptr++) {
-    j=grid->edgep[jptr];
-    ib=grid->grad[2*j];
+  if ( prop->netcdfBdy ) {
     for(nosize=0;nosize<sediments->Nsize;nosize++){
-      for(k=grid->ctop[ib];k<grid->Nk[ib];k++) {
-        sediments->boundary_sediC[nosize][jptr-grid->edgedist[2]][k]=0;
+      BoundaryScalarGeneric(sediments->boundary_sediC[nosize],
+                            sediments->SediC[nosize],
+                            sediments->sed_bounds[nosize],
+                            grid,phys,prop,myproc,comm);
+    }
+  } else {
+    // At the upstream boundary
+    for(jptr=grid->edgedist[2];jptr<grid->edgedist[3];jptr++) {
+      j=grid->edgep[jptr];
+      ib=grid->grad[2*j];
+      for(nosize=0;nosize<sediments->Nsize;nosize++){
+        for(k=grid->ctop[ib];k<grid->Nk[ib];k++) {
+          sediments->boundary_sediC[nosize][jptr-grid->edgedist[2]][k]=0;
+        }
       }
     }
-  }
 
-  // At the ocean boundary
-  for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
-    i = grid->cellp[iptr];
-    for(nosize=0;nosize<sediments->Nsize;nosize++){
-      for(k=0;k<grid->ctop[i];k++) {
-        sediments->SediC[nosize][i][k]=0;
-      } 
-      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-        sediments->SediC[nosize][i][k]=0;
+    // At the ocean boundary
+    for(iptr=grid->celldist[1];iptr<grid->celldist[2];iptr++) {
+      i = grid->cellp[iptr];
+      for(nosize=0;nosize<sediments->Nsize;nosize++){
+        for(k=0;k<grid->ctop[i];k++) {
+          sediments->SediC[nosize][i][k]=0;
+        } 
+        for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+          sediments->SediC[nosize][i][k]=0;
+        }
       }
     }
   }

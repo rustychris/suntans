@@ -29,6 +29,7 @@
 int Check(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_Comm comm)
 {
   int i, k, icu, kcu, icw, kcw, Nc=grid->Nc, Ne=grid->Ne, ih, is, ks, iu, ku, iw, kw, nc1, nc2;
+  int jptr;
   int uflag=1, wflag=1, sflag=1, hflag=1, myalldone, alldone, progout;
   REAL C, CmaxU, CmaxW, allCmaxU, allCmaxW, dtsuggestU, dtsuggestW;
 
@@ -78,7 +79,12 @@ int Check(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_C
   }
 
   CmaxU=0;
-  for(i=0;i<Ne;i++) 
+  // RH: dg is not correct on ghost edges at the
+  // far edge of the stencil, leading to overly restrictive Cmax calculated
+  // there.  Restrict this check to computational edges.
+  //for(i=0;i<Ne;i++)
+  for(jptr=grid->edgedist[0];jptr<grid->edgedist[5];jptr++) {
+    i=grid->edgep[jptr];
     for(k=grid->etop[i];k<grid->Nke[i];k++) {
       C = fabs(phys->u[i][k])*prop->dt/grid->dg[i];
       if(C>CmaxU) {
@@ -87,6 +93,7 @@ int Check(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_C
         CmaxU = C;
       }
     }
+  }
 
   CmaxW=0;
   for(i=0;i<Nc;i++) 
@@ -294,7 +301,7 @@ void Progress(propT *prop, int myproc, int numprocs)
 
   if(myproc==0) {
     fid = fopen(filename,"w");
-    fprintf(fid,"On %d of %d, t=%.2f (%d%% Complete, %d output)",
+    fprintf(fid,"On %d of %d, t=%.2f (%d%% Complete, %d output)\n",
         prop->n,prop->nstart+prop->nsteps,prop->rtime,100*(prop->n-prop->nstart)/prop->nsteps,
         1+(prop->n-prop->nstart)/prop->ntout);      
     fclose(fid);

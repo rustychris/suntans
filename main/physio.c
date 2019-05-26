@@ -517,6 +517,16 @@ void ReadPhysicalVariables(gridT *grid, physT *phys, propT *prop, int myproc, MP
   }
   fclose(prop->StartFID);
 
+  // RH: these timestep variables are not written out to
+  // restart files.  Just re-initialize as if it's a fresh
+  // run
+  // tracking how often each cell is the most limiting for timestep
+  for(i=0;i<grid->Nc;i++) {
+    phys->limiting_cell[i]=0;
+    // and what each cell's minimum time step has been
+    phys->min_time_step[i]=1e6;
+  }
+  
   // RH: unsure of these..
   // nstart should be set at the top of this fn
   // so hopefully this works.

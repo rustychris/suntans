@@ -7,6 +7,7 @@
 
 #include "mynetcdf.h"
 #include "merge.h"
+#include "sediments.h"
 
 /***********************************************
 * Private functions
@@ -111,7 +112,7 @@ void nc_read_3D(int ncid, char *vname, size_t start[3], size_t count[3], REAL **
 
     //Read the data
     if ((retval = nc_inq_varid(ncid, vname, &varid))) {
-      ERRM(retval,"inq_varid in nc_read_3D");
+      ERRM(retval,vname);
     }
     //    if ((retval = nc_get_vara_double(ncid, varid, start, count, &tmparray[0][0][0])))
     //	ERR(retval);
@@ -409,17 +410,20 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
    // Need to write the 3-D arrays as vectors
    //tmpvar = (REAL *)SunMalloc(grid->Nc*grid->Nkmax*sizeof(REAL),"WriteOutputNC");
    //tmpvarE = (REAL *)SunMalloc(grid->Ne*grid->Nkmax*sizeof(REAL),"WriteOutputNC");
-   
-   if(!(prop->n%prop->ntout) || prop->n==1+prop->nstart || blowup) {
+
+   // RH: this used to be prop->n==1+prop->nstart, but that misses
+   // the first output step.
+   if(!(prop->n%prop->ntout) || prop->n==prop->nstart || blowup) {
     
-    if(!(prop->nctimectr%prop->nstepsperncfile) || prop->n==1+prop->nstart){
-	if(prop->n > 1+prop->nstart){
-	    // Close the old netcdf file
-	    if(myproc==0){
-	    	printf("Closing opened output netcdf file...\n");
-		MPI_NCClose(prop->outputNetcdfFileID);
-	    }
-	}
+     // RH: same, used to be prop->n==1+prop->nstart
+     if( (prop->nctimectr>=prop->nstepsperncfile) || prop->n==prop->nstart){
+       if(prop->n > 1+prop->nstart){
+         // Close the old netcdf file
+         if(myproc==0){
+           printf("Closing opened output netcdf file...\n");
+           MPI_NCClose(prop->outputNetcdfFileID);
+         }
+       }
 
 	// Open the new netcdf file
 	MPI_GetFile(filename,DATAFILE,"outputNetcdfFile","WriteOutputNCmerge",myproc);
@@ -442,6 +446,12 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
 	prop->ncfilectr += 1;
 	startone[0] = prop->nctimectr;
     }
+     // DBG - can be removed.
+    //  else {
+    //    if(myproc==0) 
+    //      printf("Not opening output nc: prop->n=%d nstart=%d prop->ntout=%d nctimectr=%d nstepsperncfile=%d\n",
+    //             prop->n,prop->nstart,prop->ntout,prop->nctimectr,prop->nstepsperncfile);
+    //  }
     ncid = prop->outputNetcdfFileID;
 
     if(myproc==0 && VERBOSE>1){ 
@@ -452,16 +462,17 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
     }
     if(myproc==0){ 
 	/* Write the time data*/
-	if ((retval = nc_inq_varid(ncid, "time", &varid)))
-	    ERR(retval);
-	if ((retval = nc_put_vara_double(ncid, varid, startone, countone, time )))
-	    ERR(retval);
+      if ((retval = nc_inq_varid(ncid, "time", &varid))) {
+        printf("ncid: %d\n",ncid);
+        ERRM(retval,"nc_inq_varid('time'), proc 0");
+      }
+      if ((retval = nc_put_vara_double(ncid, varid, startone, countone, time )))
+        ERRM(retval,"proc 0, save time");
 
-	 countthree[2] = mergedGrid->Nc;
-	 counttwo[1] = mergedGrid->Nc;
-
+      countthree[2] = mergedGrid->Nc;
+      counttwo[1] = mergedGrid->Nc;
     }
-    
+
     /* Write to the physical variables*/
 
     // 2D cell-centered variables
@@ -485,7 +496,6 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
 	    nc_write_2D_merge(ncid,prop->nctimectr,  met->EP, prop, grid, "EP", numprocs, myproc, comm);
 
     }
-
     // 3D cell-centered variables
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->uc, prop, grid, "uc",0, numprocs, myproc, comm);
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->vc, prop, grid, "vc",0, numprocs, myproc, comm);
@@ -516,8 +526,7 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
     /* Update the time counter*/
     prop->nctimectr += 1;  
    }
-   
-  
+     
 } // End of function
 
 
@@ -530,6 +539,7 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
 void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup, int myproc){
    int ncid = prop->outputNetcdfFileID;
    int varid, retval, k;
+   char varname[256];
    // Start and count vectors for one, two and three dimensional arrays
    const size_t startone[] = {prop->nctimectr};
    const size_t countone[] = {1};
@@ -543,11 +553,6 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
    const REAL time[] = {prop->nctime};
 
    nc_set_log_level(3); // This helps with debugging errors
-   
-   //REAL *tmpvar, *tmpvarE;
-   // Need to write the 3-D arrays as vectors
-   //tmpvar = (REAL *)SunMalloc(grid->Nc*grid->Nkmax*sizeof(REAL),"WriteOutputNC");
-   //tmpvarE = (REAL *)SunMalloc(grid->Ne*grid->Nkmax*sizeof(REAL),"WriteOutputNC");
    
    if(!(prop->n%prop->ntout) || prop->n==1+prop->nstart || blowup) {
 
@@ -572,6 +577,16 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
       ERRM(retval,"eta id");
     if ((retval = nc_put_vara_double(ncid, varid, starttwo, counttwo, phys->h )))
       ERRM(retval,"eta");
+
+    if ((retval = nc_inq_varid(ncid, "limiting_cell", &varid)))
+      ERRM(retval,"limit_cell id");
+    if ((retval = nc_put_vara_int(ncid, varid, starttwo, counttwo, phys->limiting_cell )))
+      ERRM(retval,"limiting_cell");
+
+    if ((retval = nc_inq_varid(ncid, "min_time_step", &varid)))
+      ERRM(retval,"min_time_step");
+    if ((retval = nc_put_vara_double(ncid, varid, starttwo, counttwo, phys->min_time_step )))
+      ERRM(retval,"min_time_step");
     
     if ((retval = nc_inq_varid(ncid, "uc", &varid)))
       ERRM(retval,"uc id");
@@ -599,15 +614,15 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
       ERRM(retval,"nu_v");
     
     // Tracers
-     if(prop->beta>0){
-       if ((retval = nc_inq_varid(ncid, "salt", &varid)))
-         ERRM(retval,"salt id");
+    if(prop->beta>0){
+      if ((retval = nc_inq_varid(ncid, "salt", &varid)))
+        ERRM(retval,"salt id");
       ravel(phys->s, phys->tmpvar, grid);
       if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
         ERRM(retval,"salt");
-     }
+    }
      
-     if(prop->gamma>0){
+    if(prop->gamma>0){
 	if ((retval = nc_inq_varid(ncid, "temp", &varid)))
 	  ERRM(retval,"temp id");
 	ravel(phys->T, phys->tmpvar, grid);
@@ -635,6 +650,18 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
        ravel(age->agealpha, phys->tmpvar, grid);
        if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
          ERRM(retval,"agealpha");
+     }
+
+     // Sediment output:
+     if(prop->computeSediments){
+       for(k=0;k<sediments->Nsize;k++){
+         sprintf(varname,"sed%d",k+1); // 1-based to match suntans.dat
+         if ((retval = nc_inq_varid(ncid, varname, &varid)))
+           ERRM(retval,"sed var id");
+         ravel(sediments->SediC[k], phys->tmpvar, grid);
+         if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
+           ERRM(retval,"sed conc");
+       }
      }
      
      // Vertical grid spacing
@@ -799,7 +826,8 @@ static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, 
     **************/
    if(VERBOSE>1 && myproc==0) printf("Initialising output netcdf files...");
 
-
+   // Set the netcdf time ctr to 0
+   prop->nctimectr=0;
       
    /********************************************************************** 
     *
@@ -1533,7 +1561,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
    const int DEFLATE=1;
    const int DEFLATELEVEL=2;
    const REAL FILLVALUE = (REAL)EMPTY;
-
+   char varname[256];
 
    //REAL *tmpvar;
    // Need to write the 3-D arrays as vectors
@@ -1629,8 +1657,6 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
     nc_addattr(ncid, varid,"units","");
     nc_addattr(ncid, varid,"coordinates","xv yv");
 
-
-
     //edges
     dimidtwo[0] = dimid_Ne;
     dimidtwo[1] = dimid_Two;
@@ -1638,8 +1664,6 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
       ERR(retval);
     nc_addattr(ncid, varid,"cf_role","edge_node_connectivity");
     nc_addattr(ncid, varid,"long_name","Maps every edge to the two nodes it connects");
-    //if ((retval = nc_put_var_int(ncid,varid, grid->edges)))
-    //  ERR(retval);
 
     //neigh
     dimidtwo[0] = dimid_Nc;
@@ -1973,6 +1997,24 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
    nc_addattr(ncid, varid,"location","face");
    nc_addattr(ncid, varid,"coordinates","time yv xv");
 
+   // cfl_count
+   if ((retval = nc_def_var(ncid,"limiting_cell",NC_INT,2,dimidtwo,&varid)))
+      ERR(retval);
+   nc_addattr(ncid, varid,"long_name","Cell fFrequency of CFL limit");
+   nc_addattr(ncid, varid,"units","-");
+   nc_addattr(ncid, varid,"mesh","suntans_mesh");
+   nc_addattr(ncid, varid,"location","face");
+   nc_addattr(ncid, varid,"coordinates","time yv xv");
+
+   // minimum time step per cell
+   if ((retval = nc_def_var(ncid,"min_time_step",NC_DOUBLE,2,dimidtwo,&varid)))
+      ERR(retval);
+   nc_addattr(ncid, varid,"long_name","Minimum time step limitation");
+   nc_addattr(ncid, varid,"units","s");
+   nc_addattr(ncid, varid,"mesh","suntans_mesh");
+   nc_addattr(ncid, varid,"location","face");
+   nc_addattr(ncid, varid,"coordinates","time yv xv");
+
    //u
    if ((retval = nc_def_var(ncid,"uc",NC_DOUBLE,3,dimidthree,&varid)))
       ERR(retval);
@@ -2117,6 +2159,25 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
     // Set back to time for the other variables
     dimidtwo[0] = dimid_time;
     */
+   }
+
+   //sediment
+   if(prop->computeSediments){
+     for(k=0;k<sediments->Nsize;k++){
+       sprintf(varname,"sed%d",k+1);
+     
+       if ((retval = nc_def_var(ncid,varname,NC_DOUBLE,3,dimidthree,&varid)))
+         ERRM(retval,"Define sed var");
+       if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
+         ERR(retval);
+       if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
+         ERR(retval);
+       nc_addattr(ncid, varid,"long_name","Sediment concentration");
+       nc_addattr(ncid, varid,"units","mg l-1"); // is that true?
+       nc_addattr(ncid, varid,"mesh","suntans_mesh");
+       nc_addattr(ncid, varid,"location","face");
+       nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+     }
    }
 
    //U
@@ -3146,7 +3207,7 @@ void InitialiseAverageNCugridMerge(propT *prop, gridT *grid, averageT *average, 
 */
 void InitialiseAverageNCugrid(propT *prop, gridT *grid, averageT *average, int myproc){
    int ncid = prop->averageNetcdfFileID;
-   int retval, k;
+   int retval, k, n, j;
    int varid;
    int dimid_Nc, dimid_Ne , dimid_Np, dimid_time, dimid_numsides, dimid_Two, dimid_Nkw, dimid_Nk; 
    int dimidone[1];
@@ -3157,15 +3218,11 @@ void InitialiseAverageNCugrid(propT *prop, gridT *grid, averageT *average, int m
    const size_t counttwo[] = {grid->Nkmax,grid->Nc};
    REAL *z_r;
    REAL *z_w;
+   int *edges;
    const int DEFLATE=1;
    const int DEFLATELEVEL=2;
    const REAL FILLVALUE = (REAL)EMPTY;
 
-
-   //REAL *tmpvar;
-   // Need to write the 3-D arrays as vectors
-   //tmpvar = (REAL *)SunMalloc(grid->Nc*grid->Nkmax*sizeof(REAL),"InitialiseOutputNC");  
-   
    /* Initialise the depth arrays */
    z_r = (REAL *)SunMalloc((grid->Nkmax)*sizeof(REAL),"InitialiseOutputNCugrid");
    z_w = (REAL *)SunMalloc((grid->Nkmax+1)*sizeof(REAL),"InitialiseOutputNCugrid");
@@ -3262,8 +3319,6 @@ void InitialiseAverageNCugrid(propT *prop, gridT *grid, averageT *average, int m
       ERR(retval);
     nc_addattr(ncid, varid,"cf_role","edge_node_connectivity");
     nc_addattr(ncid, varid,"long_name","Maps every edge to the two nodes it connects");
-    //if ((retval = nc_put_var_int(ncid,varid, grid->edges)))
-    //  ERR(retval);
 
     //neigh
     dimidtwo[0] = dimid_Nc;
@@ -3894,7 +3949,6 @@ void InitialiseAverageNCugrid(propT *prop, gridT *grid, averageT *average, int m
    if ((retval = nc_enddef(ncid)))
 	ERR(retval);
 
-   
    /**********************************************************
    *
    * Write data (needs to be done out of definition mode for classic model)
@@ -3903,7 +3957,24 @@ void InitialiseAverageNCugrid(propT *prop, gridT *grid, averageT *average, int m
    nc_write_int(ncid,"cells",grid->cells,myproc);
    nc_write_int(ncid,"face",grid->face,myproc);
    nc_write_int(ncid,"nfaces",grid->nfaces,myproc);
-   nc_write_int(ncid,"edges",grid->edges,myproc);
+   if (0) {
+     nc_write_int(ncid,"edges",grid->edges,myproc);
+   } else {
+     // InitializeNCUgrid does this instead for edges:
+     // Need to convert the edge array that is stored is NUMEDGECOLUMN*Ne where
+     // NUMEDGECOLUMN=3
+     /* Initialize an edge array */
+     edges = (int *)SunMalloc(2*(grid->Ne)*sizeof(int),"InitialiseOutputNCugrid");
+     
+     for(n=0;n<grid->Ne;n++){
+       for(j=0;j<NUMEDGECOLUMNS-1;j++){
+         edges[2*n+j] = grid->edges[NUMEDGECOLUMNS*n+j];
+       }
+     }
+     nc_write_int(ncid,"edges",edges,myproc);
+     SunFree(edges,2*grid->Ne*sizeof(int),"InitialiseOutputNCugrid");
+   }
+
    nc_write_int(ncid,"neigh",grid->neigh,myproc);
    nc_write_int(ncid,"grad",grid->grad,myproc);
    nc_write_int(ncid,"mnptr",grid->mnptr,myproc);
@@ -3953,74 +4024,84 @@ void WriteAverageNCmerge(propT *prop, gridT *grid, averageT *average, physT *phy
    size_t countthree[] = {1,grid->Nkmax,grid->Nc};
    const size_t countthreew[] = {1,grid->Nkmax+1,grid->Nc};
    const REAL time[] = {prop->nctime};
-   int ntaverage=prop->ntaverage;
-    char str[BUFFERLENGTH], filename[BUFFERLENGTH];
+   char str[BUFFERLENGTH], filename[BUFFERLENGTH];
 
    nc_set_log_level(3); // This helps with debugging errors
    
-   prop->avgctr+=1;
-   // Output the first time step but don't compute the average 
-   if(!(prop->n%ntaverage)) {
+   // RH moved to UpdateAverageVariables
+   //prop->avgctr+=1;
 
-    // Work out if we need to open a new averages file or not
-    if(!(prop->avgtimectr%prop->nstepsperncfile) || prop->n==1+prop->nstart){
-	if(prop->avgfilectr>average->initialavgfilectr){
-	    // Close the old netcdf file
-	    if(myproc==0){
-	    	printf("Closing opened output netcdf file...\n");
-		MPI_NCClose(prop->averageNetcdfFileID);
-	    }
-	}
+   if (prop->n==0) {
+     printf("We do get prop->n==0\n");
+   }
+   
+   // Output the first time step but don't compute the average
+   // note that the first step of output from a restart will not
+   // be accurate, since we don't have the integrate values from
+   // the previous run.  Still, this should keep the map and
+   // average outputs the same length when ntout==ntaverage
+   if(!(prop->n%prop->ntaverage) || prop->n==prop->nstart) {
 
-	// Open the new netcdf file
-	MPI_GetFile(filename,DATAFILE,"averageNetcdfFile","OpenFiles",myproc);
-	sprintf(str,"%s_%04d.nc",filename,prop->avgfilectr);
-	if(myproc==0){
-	    prop->averageNetcdfFileID = MPI_NCOpen(str,NC_CLASSIC_MODEL|NC_NETCDF4,"OpenFiles",myproc);
-	}else{
-	    prop->averageNetcdfFileID=-1;
-	}
-	
-	// Initialise a new output file
-	if(myproc==0)
-	    InitialiseAverageNCugridMerge(prop, grid, average, myproc);
-		
+     // Work out if we need to open a new averages file or not
+     if( !(prop->avgtimectr%prop->nstepsperncfile) || (prop->n==1+prop->nstart) ){
+       if(prop->avgfilectr>average->initialavgfilectr){
+         // Close the old netcdf file
+         if(myproc==0){
+           printf("Closing opened output netcdf file...\n");
+           MPI_NCClose(prop->averageNetcdfFileID);
+         }
+       }
+       
+       // Open the new netcdf file
+       MPI_GetFile(filename,DATAFILE,"averageNetcdfFile","OpenFiles",myproc);
+       sprintf(str,"%s_%04d.nc",filename,prop->avgfilectr);
+       if(myproc==0){
+         prop->averageNetcdfFileID = MPI_NCOpen(str,NC_CLASSIC_MODEL|NC_NETCDF4,"OpenFiles",myproc);
+       }else{
+         prop->averageNetcdfFileID=-1;
+       }
+       
+       // Initialise a new output file
+       if(myproc==0)
+         InitialiseAverageNCugridMerge(prop, grid, average, myproc);
+       
+       prop->avgfilectr += 1;
+       
 	// Reset the time counter
-	prop->avgtimectr = 0;
-
-	prop->avgfilectr += 1;
-	startone[0] = prop->avgtimectr;
-    }
-    ncid = prop->averageNetcdfFileID;
-
+       prop->avgtimectr = 0;
+       startone[0] = prop->avgtimectr;
+       starttwo[0] = prop->avgtimectr;
+       startthree[0] = prop->avgtimectr;
+     }
+     ncid = prop->averageNetcdfFileID;
      
-    //Compute the averages 
-    ComputeAverageVariables(grid,average,phys,met,prop->avgctr,prop);
-
-    //Communicate the values
-    SendRecvAverages(prop,grid,average,comm,myproc); 
-
-    //Reset the counter
-    prop->avgctr=0;
-
-    if(myproc==0 && VERBOSE>1){ 
-      if(!blowup) 
-        printf("Outputting average data to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
-      else
-        printf("Outputting blowup averagedata to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
-    }
-    
-    /* Write the time data*/
-    if(myproc==0){
-	if ((retval = nc_inq_varid(ncid, "time", &varid)))
-	    ERR(retval);
-	if ((retval = nc_put_vara_double(ncid, varid, startone, countone, time )))
-	    ERR(retval);
-	countthree[2] = mergedGrid->Nc;
-	counttwo[1] = mergedGrid->Nc;
-
-    }
-    /* Write to the physical variables*/
+     //Compute the averages 
+     ComputeAverageVariables(grid,average,phys,met,prop->avgctr,prop);
+     
+     //Communicate the values
+     SendRecvAverages(prop,grid,average,comm,myproc); 
+     
+     //Reset the counter
+     // RH: moved to ZeroVariables.
+     // prop->avgctr=0;
+     
+     if(myproc==0 && VERBOSE>1){ 
+       if(!blowup) 
+         printf("Outputting average data to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
+       else
+         printf("Outputting blowup averagedata to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
+     }
+     
+     /* Write the time data*/
+     if(myproc==0){
+       if ((retval = nc_inq_varid(ncid, "time", &varid)))
+         ERR(retval);
+       if ((retval = nc_put_vara_double(ncid, varid, startone, countone, time )))
+         ERR(retval);
+       countthree[2] = mergedGrid->Nc;
+       counttwo[1] = mergedGrid->Nc;
+     }
+     /* Write to the physical variables*/
 
     // 2D cell-centered variables
     nc_write_2D_merge(ncid,prop->avgtimectr,  average->h, prop, grid, "eta", numprocs, myproc, comm);
@@ -4082,11 +4163,18 @@ void WriteAverageNCmerge(propT *prop, gridT *grid, averageT *average, physT *phy
 	nc_write_3Dedge_merge(ncid,prop->avgtimectr,  average->T_F, prop, grid, "T_F", 0, numprocs, myproc, comm);
      
     // Zero the arrays after they have been written(don't do it for the initial step)
-    //if(prop->avgctr>1)
-    // Always do this!!
-    ZeroAverageVariables(grid,average,prop);
+    if(prop->n>1+prop->nstart) {
+      if(myproc==0) {
+        printf("Zeroing average variables at prop->n=%d\n",prop->n);
+      }
+      ZeroAverageVariables(grid,average,prop);
+    } else {
+      if(myproc==0) {
+        printf("Skipping zeroing average variables at prop->n=%d\n",prop->n);
+      }
+    }
 
-    /* Update the time counter*/
+    /* Update the netcdf time index */
     prop->avgtimectr += 1;  
    }
   
@@ -4112,48 +4200,37 @@ void WriteAverageNC(propT *prop, gridT *grid, averageT *average, physT *phys, me
    size_t countthree[] = {1,grid->Nkmax,grid->Nc};
    const size_t countthreew[] = {1,grid->Nkmax+1,grid->Nc};
    const REAL time[] = {prop->nctime};
-   int ntaverage=prop->ntaverage;
 
    nc_set_log_level(3); // This helps with debugging errors
+
+   // RH moved to UpdateAverageVariables
+   //prop->avgctr+=1;
    
-   //REAL *tmpvar, *tmpvarE;
-   // Need to write the 3-D arrays as vectors
-   //tmpvar = (REAL *)SunMalloc(grid->Nc*grid->Nkmax*sizeof(REAL),"WriteOutputNC");
-   //tmpvarE = (REAL *)SunMalloc(grid->Ne*grid->Nkmax*sizeof(REAL),"WriteOutputNC");
-   
-//   if(!(prop->n%prop->ntaverage) || prop->n==1+prop->nstart || blowup) {
-//
-    prop->avgctr+=1;
    // Output the first time step but don't compute the average 
-   //if(!(prop->n%ntaverage) || prop->n==1+prop->nstart) {
-//    if(prop->avgctr==ntaverage || prop->n==1+prop->nstart) {
-   if(!(prop->n%ntaverage)) {
-     //printf("prop->n/prop->ntaverage=%d\n",prop->n/prop->ntaverage);
+   if( (prop->n==1+prop->nstart) || !(prop->n%prop->ntaverage) ) {
+     //Compute the averages 
+     ComputeAverageVariables(grid,average,phys,met,prop->avgctr,prop);
      
-    //Compute the averages 
-    //printf("prop->avgctr=%d\n",prop->avgctr);
-     //if(!(prop->n%ntaverage)) 
-    ComputeAverageVariables(grid,average,phys,met,prop->avgctr,prop);
+     //Communicate the values
+     SendRecvAverages(prop,grid,average,comm,myproc); 
 
-    //Communicate the values
-    SendRecvAverages(prop,grid,average,comm,myproc); 
+     //Reset the counter
+     // RH: moved to ZeroVariables.
+     // prop->avgctr=0;
 
-    //Reset the counter
-    prop->avgctr=0;
-
-    if(myproc==0 && VERBOSE>1){ 
-      if(!blowup) 
-        printf("Outputting average data to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
-      else
-        printf("Outputting blowup averagedata to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
-    }
-    
-    /* Write the time data*/
-    if ((retval = nc_inq_varid(ncid, "time", &varid)))
-	ERR(retval);
-    if ((retval = nc_put_vara_double(ncid, varid, startone, countone, time )))
-	ERR(retval);
-    
+     if(myproc==0 && VERBOSE>1){ 
+       if(!blowup) 
+         printf("Outputting average data to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
+       else
+         printf("Outputting blowup averagedata to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
+     }
+     
+     /* Write the time data*/
+     if ((retval = nc_inq_varid(ncid, "time", &varid)))
+       ERR(retval);
+     if ((retval = nc_put_vara_double(ncid, varid, startone, countone, time )))
+       ERR(retval);
+     
     /* Write to the physical variables*/
     if ((retval = nc_inq_varid(ncid, "eta", &varid)))
 	ERR(retval);
@@ -4337,12 +4414,16 @@ void WriteAverageNC(propT *prop, gridT *grid, averageT *average, physT *phys, me
        }
      }
      
-    // Zero the arrays after they have been written(don't do it for the initial step)
-    if(prop->avgctr>1)
-	ZeroAverageVariables(grid,average,prop);
-
-    /* Update the time counter*/
-    prop->avgtimectr += 1;  
+     // Zero the arrays after they have been written(don't do it for the initial step)
+     if(prop->n>1+prop->nstart) {
+       // printf("Zeroing average variables at prop->n=%d\n",prop->n);
+       ZeroAverageVariables(grid,average,prop);
+     } else {
+       // printf("Skipping zeroing average variables at prop->n=%d\n",prop->n);
+     }
+     
+     /* Update the netcdf time index */
+     prop->avgtimectr += 1;  
    }
   
 } // End of function
@@ -4703,9 +4784,12 @@ size_t returndimlen(int ncid, char *dimname){
  */
 void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
     int retval, j, k, n, p, sendSize;
+    int scal_idx;
     int t0, t1;
     int varid;
     char *vname;
+    char namebuff[300];
+    
     size_t start[]={0,0,0};
     size_t start2[]={0,0};
     size_t count[]={0,0,0};
@@ -4754,14 +4838,12 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
       vname = "boundary_w";
       if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
       nc_read_3D(ncid, vname, start, count, bound->boundary_w_t );
-      
-      vname = "boundary_T";
-      if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
-      nc_read_3D(ncid, vname, start, count, bound->boundary_T_t );
-      
-      vname = "boundary_S";
-      if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
-      nc_read_3D(ncid, vname, start, count, bound->boundary_S_t );
+
+      for(scal_idx=0;scal_idx<bound->num_scalars;scal_idx++) {
+        sprintf(namebuff,"boundary_%s",bound->scalars[scal_idx].varname); // e.g. "boundary_T"
+        if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",namebuff);
+        nc_read_3D(ncid, namebuff, start, count, bound->scalars[scal_idx].boundary_scal_t );
+      }
     }
 
     if(bound->hasType3){
@@ -4783,14 +4865,12 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
       vname = "wc";
       if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
       nc_read_3D(ncid, vname, start, count, bound->wc_t );
-      
-      vname = "T";
-      if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
-      nc_read_3D(ncid, vname, start, count, bound->T_t );
-      
-      vname = "S";
-      if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
-      nc_read_3D(ncid, vname, start, count, bound->S_t);
+
+      for(scal_idx=0;scal_idx<bound->num_scalars;scal_idx++) {
+        vname=bound->scalars[scal_idx].varname; // e.g. "T"
+        if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
+        nc_read_3D(ncid, vname, start, count, bound->scalars[scal_idx].scal_t );
+      }
       
       vname = "h";//2D array
       if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
@@ -4798,20 +4878,19 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
      }// End read type-3
 
      //Flux boundary data
-     if(bound->hasType2 && bound->hasSeg){
-
-	count2[1]=Nseg;
-	//if(myproc==0){
-	    vname = "boundary_Q";//2D array
-	    if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
-	    nc_read_2D(ncid, vname, start2, count2, bound->boundary_Q_t, myproc);
-	//}
-	//sendSize = count2[0]*count2[1];
-	//MPI_Bcast(&(bound->boundary_Q_t[0][0]),sendSize,MPI_DOUBLE,0,comm);
-
-     }//End flux read
-
-     if(bound->Npoint_source) {
+    if(bound->hasType2 && bound->hasSeg){
+      
+      count2[1]=Nseg;
+      //if(myproc==0){
+      vname = "boundary_Q";//2D array
+      if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundry netcdf file...\n",vname);
+      nc_read_2D(ncid, vname, start2, count2, bound->boundary_Q_t, myproc);
+      //}
+      //sendSize = count2[0]*count2[1];
+      //MPI_Bcast(&(bound->boundary_Q_t[0][0]),sendSize,MPI_DOUBLE,0,comm);
+    }//End flux read
+    
+    if(bound->Npoint_source) {
        count2[1]=bound->Npoint_source;
        // these differ from the above 
        count2[0]=1; // no quadratic interpolation
@@ -4828,24 +4907,18 @@ void ReadBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm){
        if ((retval = nc_get_vara_double(ncid, varid, start2, count2, bound->point_Q)))
          ERRM(retval,"reading point_Q"); 
        // nc_read_2D(ncid, vname, start2, count2, (REAL**)bound->point_Q, myproc);
-            
-       vname="point_T";
-       if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundary netcdf file...\n",vname);
-       if ((retval = nc_inq_varid(ncid, vname, &varid)))
-         ERRM(retval,"looking up point_T");
-       if ((retval = nc_get_vara_double(ncid, varid, start2, count2, bound->point_T)))
-         ERRM(retval,"reading point_T"); 
-       //nc_read_2D(ncid, vname, start2, count2, (REAL**)bound->point_T, myproc);
-       printf("Read in temperature for first point source: %.2f\n",bound->point_T[0]);
-       
-       vname="point_S";
-       if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundary netcdf file...\n",vname);
-       if ((retval = nc_inq_varid(ncid, vname, &varid)))
-         ERRM(retval,"looking up point_S");
-       if ((retval = nc_get_vara_double(ncid, varid, start2, count2, bound->point_S)))
-         ERRM(retval,"reading point_S"); 
-       //nc_read_2D(ncid, vname, start2, count2, (REAL**)bound->point_S, myproc);
-       printf("Read in salt for first point source: %.2f\n",bound->point_S[0]);
+
+       for(scal_idx=0;scal_idx<bound->num_scalars;scal_idx++) {
+         sprintf(namebuff,"point_%s",bound->scalars[scal_idx].varname); // e.g. "point_T"
+         vname=namebuff;
+         
+         if(VERBOSE>2 && myproc==0) printf("Reading variable: %s from boundary netcdf file...\n",vname);
+         if ((retval = nc_inq_varid(ncid, vname, &varid)))
+           ERRM(retval,vname);
+         if ((retval = nc_get_vara_double(ncid, varid, start2, count2,
+                                          bound->scalars[scal_idx].point_scal)))
+           ERRM(retval,vname); 
+       }       
      }
 
    // Wait for all processors
@@ -5135,12 +5208,53 @@ void ReturnSalinityNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nci
 	ERR(retval); 
 
    for(i=0;i<grid->Nc;i++) {
-      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-      //for(k=0;k<grid->Nk[i];k++) {
-	 ind = k*Nci + grid->mnptr[i]; 
-	 phys->s[i][k]=htmp[ind];
-	 phys->s0[i][k]=htmp[ind];
+     k=grid->ctop[i];
+     if(k==grid->Nk[i]) k--; // be sure to get the bed layer even if 'dry' from ctop.
+     for(;k<grid->Nk[i];k++) {
+       ind = k*Nci + grid->mnptr[i]; 
+       phys->s[i][k]=htmp[ind];
+       phys->s0[i][k]=htmp[ind];
+     }
+  }
+} // End function
+
+// Pull sediment initial condition for size class sizeno from netcdf
+void ReturnSedimentNC(int sizeno, propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nci, int Nki, int T0, int myproc){
+  int i,k,ind;
+  size_t start[] = {T0, 0, 0};
+  size_t count[] = {1, Nki, Nci};
+  
+  char varname[256];
+   
+  int varid, retval;
+  int ncid = prop->initialNCfileID;
+
+  // 1-based to match the names in suntans.dat
+  sprintf(varname,"sed%d",sizeno+1);
+  
+  if(VERBOSE>1 && myproc==0) printf("Reading %s initial condition from netcdf file...\n",varname);
+  if ((retval = nc_inq_varid(ncid, varname, &varid))) {
+    printf("Could not find sediment initial condition %s, will default to 0.0\n",varname);
+    for(i=0;i<grid->Nc;i++) {
+      k=grid->ctop[i];
+      if(k==grid->Nk[i]) k--; // be sure to get the bed layer even if 'dry' from ctop.
+      for(;k<grid->Nk[i];k++) {
+        sediments->SediC[sizeno][i][k]=0.0;
       }
+    }
+    return;
+  }
+  
+  if ((retval = nc_get_vara_double(ncid, varid, start, count, &htmp[0]))) 
+    ERRM(retval," could not read sediment initial condition"); 
+  
+  for(i=0;i<grid->Nc;i++) {
+    k=grid->ctop[i];
+    if(k==grid->Nk[i]) k--; // be sure to get the bed layer even if 'dry' from ctop.
+    for(;k<grid->Nk[i];k++) {
+      ind = k*Nci + grid->mnptr[i]; 
+      sediments->SediC[sizeno][i][k]=htmp[ind];
+    }
   }
 } // End function
 
@@ -5167,12 +5281,12 @@ void ReturnTemperatureNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int 
 	ERR(retval); 
 
    for(i=0;i<grid->Nc;i++) {
-      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-      //for(k=0;k<grid->Nk[i];k++) {
-	 ind = k*Nci + grid->mnptr[i]; 
-	 phys->T[i][k]=htmp[ind];
-	
-      }
+     k=grid->ctop[i];
+     if(k==grid->Nk[i]) k--; // be sure to get the bed layer even if 'dry' from ctop.
+     for(;k<grid->Nk[i];k++) {
+       ind = k*Nci + grid->mnptr[i]; 
+       phys->T[i][k]=htmp[ind];
+     }
   }
 } // End function
 
@@ -5198,26 +5312,29 @@ void ReturnAgeNC(propT *prop, gridT *grid, REAL *htmp, int Nci, int Nki, int T0,
 	ERR(retval); 
 
    for(i=0;i<grid->Nc;i++) {
-      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-      //for(k=0;k<grid->Nk[i];k++) {
-	 ind = k*Nci + grid->mnptr[i]; 
-	 age->agec[i][k]=htmp[ind];
-      }
-  }
-
+     k=grid->ctop[i];
+     if (k==grid->Nk[i]) k--; // be sure to get the bed layer even if 'dry' from ctop.
+     for(;k<grid->Nk[i];k++) {
+       ind = k*Nci + grid->mnptr[i]; 
+       age->agec[i][k]=htmp[ind];
+     }
+   }
+   
    if(VERBOSE>1 && myproc==0) printf("Reading agealpha initial condition from netcdf file...\n");
-    if ((retval = nc_inq_varid(ncid, "agealpha", &varid)))
-	ERR(retval);
-    if ((retval = nc_get_vara_double(ncid, varid, start, count, &htmp[0]))) 
-	ERR(retval); 
+   if ((retval = nc_inq_varid(ncid, "agealpha", &varid)))
+     ERR(retval);
+   if ((retval = nc_get_vara_double(ncid, varid, start, count, &htmp[0]))) 
+     ERR(retval); 
 
    for(i=0;i<grid->Nc;i++) {
-      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-      //for(k=0;k<grid->Nk[i];k++) {
-	 ind = k*Nci + grid->mnptr[i]; 
-	 age->agealpha[i][k]=htmp[ind];
-      }
-  }
+     k=grid->ctop[i];
+     if (k==grid->Nk[i]) k--; // be sure to get the bed layer even if 'dry' from ctop.
+     for(;k<grid->Nk[i];k++) {
+       //for(k=0;k<grid->Nk[i];k++) {
+       ind = k*Nci + grid->mnptr[i]; 
+       age->agealpha[i][k]=htmp[ind];
+     }
+   }
 
    if(VERBOSE>1 && myproc==0) printf("Reading agesource term from netcdf file...\n");
     if ((retval = nc_inq_varid(ncid, "agesource", &varid)))
@@ -5226,13 +5343,14 @@ void ReturnAgeNC(propT *prop, gridT *grid, REAL *htmp, int Nci, int Nki, int T0,
 	ERR(retval); 
 
    for(i=0;i<grid->Nc;i++) {
-      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-      //for(k=0;k<grid->Nk[i];k++) {
-	 ind = k*Nci + grid->mnptr[i]; 
-	 age->agesource[i][k]=htmp[ind];
-      }
-  }
-
+     k=grid->ctop[i];
+     if (k==grid->Nk[i]) k--; // be sure to get the bed layer even if 'dry' from ctop.
+     for(;k<grid->Nk[i];k++) {
+       //for(k=0;k<grid->Nk[i];k++) {
+       ind = k*Nci + grid->mnptr[i]; 
+       age->agesource[i][k]=htmp[ind];
+     }
+   }
 } // End function
 
 /*

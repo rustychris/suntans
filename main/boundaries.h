@@ -25,6 +25,28 @@ enum {
   specified, open
 };
 
+
+// struct to hold netcdf boundary condition data for a single
+// scalar.  Pulling this out into its own struct to allow for
+// more generic handling across T,S and sediment.
+typedef struct _scalar_boundT {
+  REAL ***boundary_scal_t;
+  REAL **boundary_scal_f; // forward timestep
+  REAL **boundary_scal_b; // backward timestep
+  REAL **boundary_scal;   // current value
+  REAL *point_scal; // point sources
+  REAL ***scal_t;  // type 3, cell centered boundaries
+  REAL **scal_f;
+  REAL **scal_b;
+  REAL **scal;
+  // string used to form input/output variable names for netcdf
+  // T,S, sed1, sed2, etc.
+  char varname[256]; 
+} scalar_boundT;
+
+// temperature, salinity, sediments, etc.
+#define MAXSCALARS 10
+
 // Structure array to store netcdf boundary condition data
 typedef struct _boundT{
   
@@ -135,6 +157,11 @@ typedef struct _boundT{
   REAL **T;
   REAL **S;
   REAL *h;
+
+  int num_scalars;
+  scalar_boundT scalars[MAXSCALARS];
+  // references to specific elements of scalars
+  scalar_boundT *T_scal,*S_scal;
 } boundT;
 
 // Declare the boundary structure global
@@ -146,14 +173,22 @@ void OpenBoundaryFluxes(REAL **q, REAL **ub, REAL **ubn, gridT *grid, physT *phy
                         int myproc);
 void BoundaryVelocities(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void BoundaryScalars(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
+void BoundarySediment(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void PointSources(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void PointSourcesContinuity(REAL **w, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
+void PointSourceScalar(REAL *scalar,REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void PointSourceTemp(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void PointSourceSalt(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm);
 void WindStress(gridT *grid, physT *phys, propT *prop, metT *met, int myproc);
 void InitBoundaryData(propT *prop, gridT *grid, int myproc, MPI_Comm comm);
-void BoundarySediment(gridT *grid, physT *phys, propT *prop);
+scalar_boundT *AllocateBoundaryScalar(const char *name, boundT *bound, int myproc);
 void AllocateBoundaryData(propT *prop, gridT *grid, boundT **bound, int myproc, MPI_Comm comm);
 void UpdateBdyNC(propT *prop, gridT *grid, int myproc, MPI_Comm comm);
+
+// Copies netcdf-derived data to the arrays ready for phys, sediments
+void BoundaryScalarGeneric(REAL **boundary_scal, // [jptr-edgedist[2], k]
+                           REAL **scal, // [cellp,k]
+                           scalar_boundT *scalar,
+                           gridT *grid, physT *phys, propT *prop,int myproc, MPI_Comm comm);
 
 #endif
