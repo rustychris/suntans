@@ -129,18 +129,19 @@ void InitializeMerging(gridT *grid, int mergeedges, int numprocs, int myproc, MP
   // All processors need a temporary array used to send data
   localTempMergeArray=(REAL *)SunMalloc(Nc_max*grid->Nkmax*sizeof(REAL),"InitializeMerging");
 
+  localTempMergeArray_int=(int *)SunMalloc(Nc_max*grid->Nkmax*sizeof(int),"InitializeMerging");
+
   // Only processor 0 needs the temporary array storing the entire grid
   if(myproc==0) {
     merged2DArray=(REAL *)SunMalloc(mergedGrid->Nc*sizeof(REAL),"InitializeMerging");
+    merged2DArray_int=(int *)SunMalloc(mergedGrid->Nc*sizeof(int),"InitializeMerging");
     merged3DArray=(REAL **)SunMalloc(mergedGrid->Nc*sizeof(REAL *),"InitializeMerging");
     for(i=0;i<mergedGrid->Nc;i++)
       merged3DArray[i]=(REAL *)SunMalloc(grid->Nkmax*sizeof(REAL),"InitializeMerging");
     //This is necessary for netcdf write
     //Allocate extra vertical layer to allow for w  
     //merged3DVector=(REAL *)SunMalloc(mergedGrid->Nc*(grid->Nkmax+1)*sizeof(REAL),"InitializeMerging");
-
   }
-
 
   //Merge the edges and grid if output netcdf only
   // Now do the edge arrays
@@ -315,6 +316,33 @@ void MergeCellCentered2DArray(REAL *localArray, gridT *grid, int numprocs, int m
     }
   }
 }
+
+void MergeCellCentered2DArray_int(int *localArray, gridT *grid, int numprocs, int myproc, MPI_Comm comm) {
+  int i, p, iptr;
+  MPI_Status status;
+
+  if(myproc!=0) {
+    for(iptr=grid->celldist[0];iptr<grid->celldist[2];iptr++) {
+      i=grid->cellp[iptr];
+      localTempMergeArray_int[iptr-grid->celldist[0]]=localArray[i];
+    }
+    MPI_Send(&(localTempMergeArray_int[0]),grid->celldist[2]-grid->celldist[0],MPI_INT,0,1,comm);       
+  } else {
+    for(iptr=grid->celldist[0];iptr<grid->celldist[2];iptr++) {
+      i=grid->cellp[iptr];
+
+      merged2DArray_int[grid->mnptr[i]]=localArray[i];
+    }
+
+    for(p=1;p<numprocs;p++) {
+      MPI_Recv(&(localTempMergeArray_int[0]),Nc_all[p],MPI_INT,p,1,comm,&status);         
+
+      for(i=0;i<Nc_all[p];i++) 
+	merged2DArray_int[mnptr_all[p][i]]=localTempMergeArray_int[i];
+    }
+  }
+}
+
 
 void MergeCellCentered3DArray(REAL **localArray, gridT *grid, int numprocs, int myproc, MPI_Comm comm) {
   int i, k, m, p, iptr;

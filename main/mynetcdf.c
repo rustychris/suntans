@@ -28,9 +28,14 @@ void nc_write_int(int ncid, char *vname, int *tmparray, int myproc);
 void nc_write_intvar(int ncid, char *vname, gridT *grid, int *tmparray, int myproc);
 void nc_write_doublevar(int ncid, char *vname, gridT *grid, REAL *tmparray, int myproc);
 
-static void nc_write_2D_merge(int ncid, int tstep, REAL *array, propT *prop, gridT *grid, char *varname, int numprocs, int myproc, MPI_Comm comm);
-static void nc_write_3D_merge(int ncid, int tstep, REAL **array, propT *prop, gridT *grid, char *varname, int isw, int numprocs, int myproc, MPI_Comm comm);
-static void nc_write_3Dedge_merge(int ncid, int tstep, REAL **array, propT *prop, gridT *grid, char *varname,int isw, int numprocs, int myproc, MPI_Comm comm);
+static void nc_write_2D_merge(int ncid, int tstep, REAL *array, propT *prop, gridT *grid,
+                              char *varname, int numprocs, int myproc, MPI_Comm comm);
+static void nc_write_2D_merge_int(int ncid, int tstep, int *array, propT *prop, gridT *grid,
+                                  char *varname, int numprocs, int myproc, MPI_Comm comm);
+static void nc_write_3D_merge(int ncid, int tstep, REAL **array, propT *prop, gridT *grid,
+                              char *varname, int isw, int numprocs, int myproc, MPI_Comm comm);
+static void nc_write_3Dedge_merge(int ncid, int tstep, REAL **array, propT *prop, gridT *grid,
+                                  char *varname,int isw, int numprocs, int myproc, MPI_Comm comm);
 
 static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, metT *met, int myproc);
 
@@ -310,6 +315,32 @@ static void nc_write_2D_merge(int ncid, int tstep, REAL *array, propT *prop, gri
 	    ERR(retval);
     }
 }
+
+
+/*
+ * Function: nc_write_2D_merge_int()
+ * -------------------------------
+ * Merges a 2D (time-varying) integer variable and writes to netcdf
+ */
+static void nc_write_2D_merge_int(int ncid, int tstep, int *array, propT *prop, gridT *grid,
+                                  char *varname, int numprocs, int myproc, MPI_Comm comm){
+   int varid, retval;
+   size_t starttwo[] = {tstep,0};
+   size_t counttwo[] = {1,grid->Nc};
+
+   MergeCellCentered2DArray_int(array,grid,numprocs,myproc,comm);
+
+   if(myproc==0){
+     counttwo[1] = mergedGrid->Nc;
+     if ((retval = nc_inq_varid(ncid, varname, &varid)))
+       ERR(retval);
+     if ((retval = nc_put_vara_int(ncid, varid, starttwo, counttwo, merged2DArray_int )))
+       ERR(retval);
+   }
+}
+
+
+
 /*
  * Function: nc_write_3D_merge()
  * -------------------------------
@@ -477,6 +508,11 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
 
     // 2D cell-centered variables
     nc_write_2D_merge(ncid, prop->nctimectr, phys->h, prop, grid, "eta", numprocs, myproc, comm);
+
+    // RH: variables to diagnose time limiting cells.
+    nc_write_2D_merge_int(ncid, prop->nctimectr, phys->limiting_cell, prop, grid, "limiting_cell", numprocs, myproc, comm);
+    nc_write_2D_merge(ncid, prop->nctimectr, phys->min_time_step, prop, grid, "min_time_step", numprocs, myproc, comm);
+    
     if(prop->metmodel>0){
     	// Atmospheric flux variables
 	nc_write_2D_merge(ncid,prop->nctimectr, met->Uwind, prop, grid, "Uwind", numprocs, myproc, comm);
@@ -1178,7 +1214,26 @@ static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, 
    nc_addattr(ncid, varid,"location","face");
    nc_addattr(ncid, varid,"positive","up");
    nc_addattr(ncid, varid,"coordinates","time yv xv");
-    
+
+   // cfl_count
+   if ((retval = nc_def_var(ncid,"limiting_cell",NC_INT,2,dimidtwo,&varid)))
+      ERR(retval);
+   nc_addattr(ncid, varid,"long_name","Cell frequency of CFL limit");
+   nc_addattr(ncid, varid,"units","-");
+   nc_addattr(ncid, varid,"mesh","suntans_mesh");
+   nc_addattr(ncid, varid,"location","face");
+   nc_addattr(ncid, varid,"coordinates","time yv xv");
+
+   // minimum time step per cell
+   if ((retval = nc_def_var(ncid,"min_time_step",NC_DOUBLE,2,dimidtwo,&varid)))
+      ERR(retval);
+   nc_addattr(ncid, varid,"long_name","Minimum time step limitation");
+   nc_addattr(ncid, varid,"units","s");
+   nc_addattr(ncid, varid,"mesh","suntans_mesh");
+   nc_addattr(ncid, varid,"location","face");
+   nc_addattr(ncid, varid,"coordinates","time yv xv");
+
+   
    //u
    if ((retval = nc_def_var(ncid,"uc",NC_DOUBLE,3,dimidthree,&varid)))
       ERR(retval);
@@ -2000,7 +2055,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
    // cfl_count
    if ((retval = nc_def_var(ncid,"limiting_cell",NC_INT,2,dimidtwo,&varid)))
       ERR(retval);
-   nc_addattr(ncid, varid,"long_name","Cell fFrequency of CFL limit");
+   nc_addattr(ncid, varid,"long_name","Cell frequency of CFL limit");
    nc_addattr(ncid, varid,"units","-");
    nc_addattr(ncid, varid,"mesh","suntans_mesh");
    nc_addattr(ncid, varid,"location","face");
