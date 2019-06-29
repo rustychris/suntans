@@ -46,8 +46,8 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
 
   prop->TVD = TVDscheme;
   // These are used mostly debugging to turn on/off vertical and horizontal TVD.
-  prop->horiTVD = 0;
-  prop->vertTVD = 0;
+  prop->horiTVD = 0; // disable horizontal TVD
+  prop->vertTVD = 1; // enable vertical TVD
 
   ap = phys->ap;
   am = phys->am;

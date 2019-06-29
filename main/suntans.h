@@ -65,7 +65,7 @@
 
 // 0: disable horizontal advection of turbulence
 // 1: enable
-#define HOR_ADV_TURBULENCE 0
+#define HOR_ADV_TURBULENCE 1
 
 // define global variables for filenames
 char DATADIR[BUFFERLENGTH],
