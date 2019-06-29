@@ -1982,6 +1982,7 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
     nc_addattr(ncid, varid,"mesh","suntans_mesh");
     nc_addattr(ncid, varid,"location","face");
     nc_addattr(ncid, varid,"coordinates","xv yv");
+    nc_addattr(ncid, varid,"positive","down");
     //if ((retval = nc_put_var_double(ncid,varid, grid->dv)))
     //  ERR(retval);
 
