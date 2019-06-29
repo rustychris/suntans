@@ -22,9 +22,11 @@ gridT *mergedGrid;
 int *Nc_all, *Ne_all, Nc_max, Ne_max;
 int **mnptr_all, **eptr_all, *send3DSize, *send3DESize;
 REAL *localTempMergeArray, *localTempEMergeArray, *merged2DArray, **merged3DArray, *merged3DVector, **merged3DEArray;
+int *merged2DArray_int, *localTempMergeArray_int;
 
 void InitializeMerging(gridT *grid, int mergeedges, int numprocs, int myproc, MPI_Comm comm);
 void MergeCellCentered2DArray(REAL *localArray, gridT *grid, int numprocs, int myproc, MPI_Comm comm);
+void MergeCellCentered2DArray_int(int *localArray, gridT *grid, int numprocs, int myproc, MPI_Comm comm);
 void MergeCellCentered3DArray(REAL **localArray, gridT *grid, int numprocs, int myproc, MPI_Comm comm);
 void MergeEdgeCentered3DArray(REAL **localArray, gridT *grid, int numprocs, int myproc, MPI_Comm comm);
 void FreeMergingArrays(gridT *grid, int myproc);
