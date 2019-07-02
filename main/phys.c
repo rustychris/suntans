@@ -619,6 +619,18 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
     }
   }
 
+  // check for nan
+  for(i=0;i<Nc;i++) {
+    for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+      if ( phys->s[i][k] != phys->s[i][k] ) {
+        printf("Initial condition for salinity includes nan at %f %f\n",
+               grid->xv[i],grid->yv[i]);
+        MPI_Finalize();
+        exit(1);
+      }
+    }
+  }
+
   if(prop->readTemperature && prop->readinitialnc == 0) {
     stmp = (REAL *)SunMalloc(grid->Nkmax*sizeof(REAL),"InitializePhysicalVariables");
     if(fread(stmp,sizeof(REAL),grid->Nkmax,prop->InitTemperatureFID) != grid->Nkmax)
@@ -642,7 +654,18 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
       }
     }
   }
-
+  // check for nan
+  for(i=0;i<Nc;i++) {
+    for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+      if ( phys->T[i][k] != phys->T[i][k] ) {
+        printf("Initial condition for temperature includes nan at %f %f\n",
+               grid->xv[i],grid->yv[i]);
+        MPI_Finalize();
+        exit(1);
+      }
+    }
+  }
+  
   // Sediment initial condition is inside InitializeSediment
   
   // Initialize the velocity field 
@@ -750,6 +773,7 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
 void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
   int nc1,nc2;
   REAL h;
+  REAL ratio;
   int i, j;
 
   if(prop->z0T==0) 
@@ -764,8 +788,19 @@ void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
       phys->CdB[j]=prop->CdB;
   else {
     for(j=0;j<grid->Ne;j++) {
-      phys->CdB[j]=pow(log(0.5*grid->dzf[j][grid->Nke[j]-1]/phys->z0B_spec[j])/KAPPA_VK,-2);
-      //printf("phys->CdB[%d]=%f, dzf = %f, z0B = %f\n",j,phys->CdB[j],grid->dzf[j][grid->Nke[j]-1],prop->z0B);
+      // Have to be a bit careful here with very large roughness
+      // The usual:
+      // ratio=0.5*grid->dzf[j][grid->Nke[j]-1]/phys->z0B_spec[j];
+      // the log of this can end up zero or negative.
+      // This way it is always greater than 1.
+      ratio=(0.5*grid->dzf[j][grid->Nke[j]-1] + phys->z0B_spec[j])/phys->z0B_spec[j];
+      if ( ratio==0.00 ) {
+        phys->CdB[j]=100;
+      } else {
+        phys->CdB[j]=pow(log(ratio)/KAPPA_VK,-2);
+        if(phys->CdB[j]>100) { phys->CdB[j]=100; }
+      }
+      ASSERT_FINITE(phys->CdB[j]);
     }
   }
 
@@ -1586,20 +1621,6 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
   int i, ib, iptr, boundary_index, nf, j, jptr, k, nc, nc1, nc2, ne, 
   k0, kmin, kmax;
   REAL *a, *b, *c, fab1, fab2, fab3, sum, def1, def2, dgf, Cz, tempu; //AB3
-
-  // RH: remove soon, but keep for the moment.  writes advective term
-  // out to disk
-#undef DBG_HSOURCE
-#ifdef DBG_HSOURCE
-  char str[BUFFERLENGTH];
-  FILE *fp_stmp=NULL;
-
-  if(!(prop->n%prop->ntout) || prop->n==1+prop->nstart ) {
-    sprintf(str,"%s/stmp.dat.%d",DATADIR,myproc);
-    printf("logging stmp to %s\n",str);
-    fp_stmp=MPI_FOpen(str,"a","HorizontalSource",myproc);
-  }
-#endif
 
   a = phys->a;
   b = phys->b;

@@ -595,15 +595,18 @@ void calcInterpWeights(gridT *grid, propT *prop, REAL *xo, REAL *yo, int Ns, int
 	  }
 	  
 	  // Check the weights
-	  if(VERBOSE>3 && myproc==0) {
-	    sumgamma=0.0;
-	    printf("W[j]:\n");
-	    for(jj=0;jj<Ns;jj++){ // don't include the last point
-	      sumgamma+=gamma[jj];
-	      printf("%3.6f ",gamma[jj]);
-	    }
-	    printf("\nSumW = %f (should equal 1.000)\n",sumgamma);
+          sumgamma=0.0;
+          // printf("W[j]:\n");
+          for(jj=0;jj<Ns;jj++){ // don't include the last point
+            sumgamma+=gamma[jj];
+            //printf("%3.6f ",gamma[jj]);
+          }
+          if ( fabs(sumgamma - 1.0) > 0.001 ) {
+            printf("\nSumW = %f (should equal 1.000)\n",sumgamma);
 	  }
+          if (sumgamma !=sumgamma ) {
+            printf("\nSumW = %f (should equal 1.000)\n",sumgamma);
+          }
 	} 
 	
       // Free up the arrays
@@ -929,6 +932,8 @@ void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **
 	   printf("RH[%d] = %6.10f, z_RH = %6.10f m\n",i,met->RH[i],met->z_RH[i]);
 	   printf("cloud[%d] = %6.10f\n",i,met->cloud[i]);
 	   printf("T[%d][%d] = %6.10f\n",i,ktop,T[i][ktop]);
+           printf(" cell location: %10.4f %10.4f\n",grid->xv[i], grid->yv[i]);
+           
 	   MPI_Finalize();
 	   exit(EXIT_FAILURE);
 	}

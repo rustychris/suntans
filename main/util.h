@@ -16,8 +16,12 @@
 
 #include "grid.h"
 #include "suntans.h"
+#include "math.h"
 
-#define ASSERT_FINITE(f) assert((f)==(f))
+//#define ASSERT_FINITE(f) assert((f)==(f))w
+#define ASSERT_FINITE(f) assert(isfinite(f))
+
+
 
 enum Type
 {

@@ -9,8 +9,7 @@
  * University. All Rights Reserved.
  *
  */
-#include <assert.h>
-#define ASSERT_FINITE(f) assert((f)==(f))
+
 #include "math.h"
 #include "phys.h"
 #include "grid.h"
@@ -62,6 +61,9 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
       dvdz[k]=2.0*(phys->vc[i][k-1]-phys->vc[i][k])/(grid->dzz[i][k-1]+grid->dzz[i][k]);
       drdz[k]=2.0*(phys->rho[i][k-1]-phys->rho[i][k])/(grid->dzz[i][k-1]+grid->dzz[i][k]);
     }
+
+    ASSERT_FINITE(q[i][k]); // okay here
+    
     // RH need to handle 1 layer cells
     if( grid->Nk[i] - grid->ctop[i]>1 ){
       dudz[grid->ctop[i]]=dudz[grid->ctop[i]+1];
@@ -97,6 +99,8 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
       kappaT[i][k]=q[i][k]*l[i][k]*Sq;
       phys->stmp3[i][k]=q[i][k];
       q[i][k]*=q[i][k];
+
+      ASSERT_FINITE(q[i][k]); // okay here.
     }
 
     // htmp will store the value at the top boundary for q^2
@@ -116,6 +120,18 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
       phys->htmp[i]=pow(B1,2.0/3.0)*(CdAvgT*(pow(phys->uc[i][grid->ctop[i]],2)+pow(phys->vc[i][grid->ctop[i]],2))+
                                      tauAvgT);
       phys->hold[i]=pow(B1,2.0/3.0)*CdAvgB*(pow(phys->uc[i][grid->Nk[i]-1],2)+pow(phys->vc[i][grid->Nk[i]-1],2));
+      if(phys->hold[i]!=phys->hold[i]) {
+        assert(B1>=0);
+        printf("B1: %f  uc: %f  vc; %f\n",B1,phys->uc[i][grid->Nk[i]-1],
+               phys->vc[i][grid->Nk[i]-1]);
+        printf("CdAvgB: %f  hold %f\n",CdAvgB,phys->hold[i]);
+      }
+      assert(B1>=0);
+      ASSERT_FINITE(phys->uc[i][grid->Nk[i]-1]);
+      ASSERT_FINITE(phys->vc[i][grid->Nk[i]-1]);
+      ASSERT_FINITE(CdAvgB); // this is inf.
+      ASSERT_FINITE(phys->hold[i]);// FAILS
+      ASSERT_FINITE(phys->htmp[i]);
     } else {
       // dry cell -- 
       phys->htmp[i]=phys->hold[i]=0.0;
@@ -127,19 +143,38 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
     j = grid->edgep[jptr];
     ib = grid->grad[2*j];
     
-    for(k=grid->ctop[ib];k<grid->Nk[ib];k++) 
+    for(k=grid->ctop[ib];k<grid->Nk[ib];k++) {
       phys->boundary_tmp[jptr-grid->edgedist[2]][k]=q[ib][k];
+      ASSERT_FINITE(phys->boundary_tmp[jptr-grid->edgedist[2]][k]);
+    }
   }
 #ifdef DBG_PROC
   if(DBG_PROC==myproc) printf("UpdateScalars for turb q\n");
+
+  for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
+    i=grid->cellp[iptr];
+    for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+      ASSERT_FINITE(q[i][k]);// fails
+      ASSERT_FINITE(l[i][k]);
+    }
+  }
 #endif
+
   // for turbulence turn off horizontal advection
   UpdateScalars(grid,phys,prop,wnew,q,phys->boundary_tmp,phys->Cn_q,0,0,kappaT,thetaQ,phys->uold,phys->wtmp,
                 phys->htmp,phys->hold,1,1,comm,myproc,0,prop->TVDturb,HOR_ADV_TURBULENCE);
 #ifdef DBG_PROC
   if(DBG_PROC==myproc) printf("UpdateScalars for turb q return\n");
-#endif
 
+  for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
+    i=grid->cellp[iptr];
+    for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+      ASSERT_FINITE(q[i][k]);// fails
+      ASSERT_FINITE(l[i][k]);
+    }
+  }
+#endif
+  
   // q now contains q^2
   for(i=0;i<grid->Nc;i++) {
 
@@ -191,6 +226,8 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
     
     for(k=grid->ctop[i];k<grid->Nk[i];k++) {
       if(l[i][k]<LBACKGROUND) l[i][k]=LBACKGROUND;
+      ASSERT_FINITE(q[i][k]);// fails
+      ASSERT_FINITE(l[i][k]);
     }
   }
 
@@ -215,6 +252,11 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
       N[grid->ctop[i]]=0;
 
     for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+#ifdef DBG_PROC
+      ASSERT_FINITE( l[i][k] );
+      ASSERT_FINITE( q[i][k] );// fails
+#endif
+      
       if(l[i][k]<0) l[i][k]=0;
       if(q[i][k]<0) q[i][k]=0;
       l[i][k]=l[i][k]/(q[i][k]+SMALL);
@@ -225,6 +267,15 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
 
       nuT[i][k]=Sm*q[i][k]*l[i][k];
       kappaT[i][k]=Sh*q[i][k]*l[i][k];
+
+#ifdef DBG_PROC
+      // DBG
+      if( nuT[i][k]!=nuT[i][k] ) {
+        printf("nuT[i=%d][k=%d]=%f\n",i,k,nuT[i][k]);
+        MPI_Finalize();
+        exit(1);
+      }
+#endif
     }
     for(k=0;k<grid->ctop[i];k++)
       nuT[i][k]=kappaT[i][k]=l[i][k]=q[i][k]=0;

@@ -39,7 +39,9 @@
 // Had been (20*DRYCELLHEIGHT)
 // with SFB grid, that was getting down to 2.4s time step limitation.
 // Changing this from 2cm to 5cm gives a similar increase in the min_time_step.
-#define DZMIN_SURFACE (0.05)
+// 2019-07-01: for breach flows, testing 0.10m to see if the timesteps are
+// are limited by vertical or horizontal fluxes
+#define DZMIN_SURFACE (0.25)
 
 // Cell with depth less than this will be propped up to
 // to this deep.  should be less than DRYCELLHEIGHT

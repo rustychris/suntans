@@ -70,6 +70,12 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
   for(i=0;i<Nc;i++) {
     for(k=0;k<grid->Nk[i];k++)  {
       phys->stmp[i][k]=scal[i][k];
+      if( phys->stmp[i][k]!=phys->stmp[i][k] ) {
+        printf("Top of update scalars - some nan in the input at %f %f\n",
+               grid->xv[i],grid->yv[i]);
+        MPI_Finalize();
+        exit(1);
+      }
 #ifdef DBG_CELL
       if(DBG_CELL==i && DBG_PROC==myproc) {
         printf("[p=%d] top of UpdateScalars, scal[i=%d][k=%d]=%.3f\n",
@@ -164,9 +170,17 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
     b[(grid->Nk[i]-1)-ktop]+=c[(grid->Nk[i]-1)-ktop]; // if ktop==ctop==Nk,
 
     // Implicit vertical diffusion terms
-    for(k=ktop+1;k<grid->Nk[i];k++)
+    for(k=ktop+1;k<grid->Nk[i];k++) {
       bd[k]=(2.0*kappa+kappa_tv[i][k-1]+kappa_tv[i][k])/
         (grid->dzz[i][k-1]+grid->dzz[i][k]);
+
+      // DBG - kappa_tv is bad.
+      if(bd[k]!=bd[k]) {
+        printf("bd[k=%d]=%f  kappa_tv: %f %f  dzz: %f %f \n",k,bd[k],
+               kappa_tv[i][k-1],kappa_tv[i][k],
+               grid->dzz[i][k-1],grid->dzz[i][k]);
+      }
+    }
 
     for(k=ktop+1;k<grid->Nk[i]-1;k++) {
       a[k-ktop]-=theta*dt*bd[k];
@@ -241,7 +255,18 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
                       -(bd[k]+bd[k+1])*phys->stmp[i][k]
                       +bd[k+1]*phys->stmp[i][k+1]);
       if( d[k-ktop]!=d[k-ktop] ) {
-        printf("Hey ho\n"); // HERE
+        printf("UpdateScalars; Hey ho\n");
+        // (1-theta)
+        printf("   term A: %f\n",(am[k]*phys->stmp[i][k-1]));
+        printf("   term B: %f\n",(ap[k]-am[k+1])*phys->stmp[i][k]);
+        printf("   term C: %f\n",ap[k+1]*phys->stmp[i][k+1]);
+        // These are all nan.
+        printf("   term D: %f\n", bd[k]*phys->stmp[i][k-1] );
+        printf("   term E: %f\n", (bd[k]+bd[k+1])*phys->stmp[i][k] );
+        printf("   term F: %f\n", bd[k+1]*phys->stmp[i][k+1] );
+        printf(" bd[k]: %f\n",bd[k]);
+        MPI_Finalize();
+        exit(1);
       }
     }
     
