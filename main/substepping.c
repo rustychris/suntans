@@ -20,6 +20,7 @@
 typedef struct {
   int proc;
   int i,k;
+  REAL x,y;
   REAL dt_min;
   int nsubsteps;
 } substep_info;
@@ -137,6 +138,8 @@ void CalculateSubsteps(gridT *grid, physT *phys, propT *prop, int myproc,
             mine.i = i;
             mine.k = k;
             mine.dt_min = dt_min_i;
+            mine.x = grid->xv[i];
+            mine.y = grid->yv[i];
           }
           if (dt_min_i < phys->min_time_step[i] ) {
             phys->min_time_step[i]=dt_min_i;
@@ -162,6 +165,8 @@ void CalculateSubsteps(gridT *grid, physT *phys, propT *prop, int myproc,
         mine.i = theirs.i;
         mine.k = theirs.k;
         mine.nsubsteps = theirs.nsubsteps;
+        mine.x = theirs.x;
+        mine.y = theirs.y;
       }
 
       if ( mine.nsubsteps > 500 ) {
@@ -180,8 +185,8 @@ void CalculateSubsteps(gridT *grid, physT *phys, propT *prop, int myproc,
 
   if (myproc == 0 && VERBOSE) {
     if( VERBOSE > 1 || mine.nsubsteps > 1 ) {
-      printf("Substep limitation: dt_min=%f, %d substeps, from p=%d,i=%d,k=%d\n",
-             mine.dt_min,mine.nsubsteps,mine.proc,mine.i,mine.k);
+      printf("Substep limitation: dt_min=%f, %d substeps, from p=%d,i=%d,k=%d  %.2f %.2f\n",
+             mine.dt_min,mine.nsubsteps,mine.proc,mine.i,mine.k,mine.x,mine.y);
       fflush(stdout);
     }
   }
