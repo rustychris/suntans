@@ -42,7 +42,7 @@
  * Private Function declarations.
  *
  */
-static void UPredictor(gridT *grid, physT *phys, 
+static void UPredictor(gridT *grid, physT *phys, metT *met,
     propT *prop, int myproc, int numprocs, MPI_Comm comm);
 static void Corrector(REAL **qc, gridT *grid, physT *phys, propT *prop, int myproc, 
     int numprocs, MPI_Comm comm);
@@ -1342,7 +1342,7 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       // The predicted horizontal velocity is now in phys->u
       t0=Timer();
       // compute U^* and h^* (Eqn 40 and Eqn 31)
-      UPredictor(grid,phys,prop,myproc,numprocs,comm);
+      UPredictor(grid,phys,met,prop,myproc,numprocs,comm);
       ISendRecvCellData2D(phys->h,grid,myproc,comm);
       t_predictor+=Timer()-t0;
 
@@ -2912,7 +2912,7 @@ static void EddyViscosity(gridT *grid, physT *phys, propT *prop, REAL **wnew, MP
  * Upon entry, phys->utmp contains the right hand side of the u-momentum equation
  *
  */
-static void UPredictor(gridT *grid, physT *phys, 
+static void UPredictor(gridT *grid, physT *phys, metT* met,
     propT *prop, int myproc, int numprocs, MPI_Comm comm)
 {
   int i, iptr, j, jptr, ne, nf, nf1, normal, nc1, nc2, k, n0, n1;
@@ -3601,6 +3601,7 @@ static void UPredictor(gridT *grid, physT *phys,
 
 
   PointSources(grid,phys,prop,myproc,comm);
+  RainEvapSources(grid,phys,met,prop,myproc,comm);
   
   // Now update the vertical grid spacing with the new free surface.
   // can comment this out to linearize the free surface

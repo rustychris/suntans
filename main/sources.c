@@ -502,35 +502,46 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
      */
     }
   }else if(prop->metmodel==5) {
-    // nudge to Tair
+    // nudge to Tair if Lsw is nonzero
     REAL nudge_rate;
-    
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
       i = grid->cellp[iptr];
       ktop = grid->ctop[i];
-      
+        
       depth=0;
       for(k=ktop;k<grid->Nk[i];k++) {
- 	depth += 0.5*grid->dzz[i][k]; // depth to center of cell
+        depth += 0.5*grid->dzz[i][k]; // depth to center of cell
         // Use the light extinction coefficient as a measure of how deep to
         // nudge temp
-
-        // depth-varying nudge rate, units of 1/seconds
-        // hard coded time scale
-        // an infinitely thin layer, depth=0, would
-        // equilibrate with air temp in one day.
-        // layer with depth equal to Lsw at its center
-        // equilibrates 37% of the way in one day.
-        nudge_rate=exp(-depth/prop->Lsw) / (86400.);
-
-        //  dT/dt + u dot grad T = d/dz ( kappaT dT/dz) + A + B*T
-        // What I want is dT/dt ... = ... (Tair-T)*alpha
-        // rather than splitting this term in A and B, linearize
-        // here for easier debugging.
-        A[i][k]=nudge_rate*(met->Tair[i]-phys->T[i][k]);
-        B[i][k]=0;
+        
+        if( prop->Lsw > 0.0 ) {
+          // depth-varying nudge rate, units of 1/seconds
+          // hard coded time scale of 1 day.
+          // an infinitely thin layer, depth=0, would
+          // equilibrate with air temp in one day.
+          // layer with depth equal to Lsw at its center
+          // equilibrates 37% of the way in one day.
+          nudge_rate=exp(-depth/prop->Lsw) / (86400.);
+          
+          //  dT/dt + u dot grad T = d/dz ( kappaT dT/dz) + A + B*T
+          // What I want is dT/dt ... = ... (Tair-T)*alpha
+          // rather than splitting this term in A and B, linearize
+          // here for easier debugging.
+          A[i][k]=nudge_rate*(met->Tair[i]-phys->T[i][k]);
+          B[i][k]=0;
+        } else {
+          A[i][k]=B[i][k]=0.0;
+        }
+        if(k==ktop) {
+          // also account for mass lost/gained to evaporation/rain,
+          // under the assumption that temperature is unchanged
+          // this is analogous to PointSourceScalar, but here EP
+          // is the adjusted [evap-rain] [m/s], and the scalar
+          // value is the existing value.
+          A[i][k] -= phys->T[i][k]* met->EP[i] / grid->dzzold[i][k];
+        }
       }
-    }    
+    }
   }else{ // metmodel==0, 4, or >5      Set flux terms to zero
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
       i = grid->cellp[iptr];

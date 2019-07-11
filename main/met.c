@@ -7,6 +7,7 @@
 //#include "phys.h"
 #include "mynetcdf.h"
 #include "sendrecv.h"
+#include "util.h"
 
 /* Private functions */
 void calcInterpWeights(gridT *grid, propT *prop, REAL *xo, REAL *yo, int Ns, int **index, REAL **klambda,int myproc);
@@ -183,8 +184,10 @@ void updateMetData(propT *prop, gridT *grid, metinT *metin, metT *met, int mypro
 	 met->cloud[i]=0.0;
        if (met->cloud[i]>1.0)
 	 met->cloud[i]=1.0;
-       if (met->rain[i]<0.0) 
+       if ( (prop->metmodel!=5) && (met->rain[i]<0.0) ){
+         // metmodel 5 allows for evaporation as negative rain.
 	 met->rain[i]=0.0;
+       }
        if (met->RH[i]<0.0)
 	 met->RH[i]=0.0;
        if (met->RH[i]>100.0)
@@ -1425,3 +1428,35 @@ static REAL psit_30(REAL zet){
   }
   return psi;
 } // End psit_30
+
+
+/* Alter the volume of the water column to account for rain and evaporation.
+   rain is taken as a signed quantity in m/s.  Evaporation is limited to
+   a minimum depth to avoid creating hypersaline cells which can create salt mass
+   during wetting/drying.
+
+   Only active for metmodel==5.
+ */ 
+void RainEvapSources(gridT *grid, physT *phys, metT *met, propT *prop, int myproc, MPI_Comm comm)
+{
+  int i,iptr;
+  REAL dz_avail;
+  
+  if( prop->metmodel==5 ) {
+    // remove evaporation/add rain.
+    for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
+      i = grid->cellp[iptr];
+      // store the actual 'velocity' in EP,
+      // and flip sign to match other usages of EP, where it is evaporation - precip.
+      met->EP[i]=-met->rain[i];
+      // adjusted to avoid removing too much water.
+      if( met->EP[i]>0 ) {
+        // at most evaporate enough to get down to DZMIN_EVAP
+        dz_avail=phys->h[i]+grid->dv[i] - DZMIN_EVAP;
+        met->EP[i]=Min( met->EP[i], dz_avail/prop->dt );
+      }
+      phys->h[i] += -met->EP[i]*prop->dt;
+    }
+  }
+}
+                     

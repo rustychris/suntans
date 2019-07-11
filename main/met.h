@@ -148,4 +148,5 @@ void AllocateMet(propT *prop, gridT *grid, metT **met, int myproc);
 void AllocateMetIn(propT *prop, gridT *grid, metinT **metin, int myproc);
 void updateAirSeaFluxes(propT *prop, gridT *grid, physT *phys, metT *met,REAL **T);
 REAL shortwave(REAL time, REAL lat,REAL C_cloud, REAL toffset);
+void RainEvapSources(gridT *grid, physT *phys, metT *met, propT *prop, int myproc, MPI_Comm comm);
 #endif

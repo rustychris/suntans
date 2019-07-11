@@ -73,7 +73,7 @@ void OpenBoundaryFluxes(REAL **q, REAL **ub, REAL **ubn, gridT *grid, physT *phy
 void PointSources(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm)
 {
   int i,i_src;
-  REAL Q;
+  REAL Q, htmp;
   
   for(i=0;i<bound->Npoint_source;i++) {
     i_src=bound->ind_point[i];

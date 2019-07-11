@@ -43,6 +43,10 @@
 // are limited by vertical or horizontal fluxes
 #define DZMIN_SURFACE (0.25)
 
+// Evaporation (negative rain) will not decrease a cell's depth
+// below this number.
+#define DZMIN_EVAP 0.2
+
 // Cell with depth less than this will be propped up to
 // to this deep.  should be less than DRYCELLHEIGHT
 #define CLAMPHEIGHT (0.2*DRYCELLHEIGHT)

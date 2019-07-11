@@ -1,5 +1,5 @@
 """
-Tests related to point sources
+Tests related to nudging of temperature, evaporation, rain.
 """
 
 import os
@@ -113,4 +113,57 @@ def test_met_nudge():
     return model
 
 
-model=test_met_nudge()
+def test_met_evap():
+    """
+    test metmodel=5, disable nudge to Tair, include evaporation
+    """
+    model=base_model()
+    model.run_start=np.datetime64("2018-06-10 00:00")
+    model.run_stop =np.datetime64("2018-06-20 00:00")
+
+    model.config['metmodel']=5
+    model.config['rstretch']=1.1
+    model.config['Lsw']=0.0 # disable nudging
+
+    # quiescent first:
+    model.bcs=[]
+    
+    model.write()
+
+    # leave some dry layers at the surface
+    model.ic_ds.eta.values[:]=-1.0
+    model.ic_ds.salt.values[:]=34.0
+    model.ic_ds.temp.values[:]=10.0
+    
+    model.write_ic_ds()
+
+    # Add data point for Tair and rain.
+    model.met_ds['Tair'].values[:]=20
+    # 5cm/day ~ 5e-7 m/s
+    model.met_ds['rain'].values[:]=-1e-6
+    
+    model.write_met_ds()
+    
+    model.partition()
+    model.sun_verbose_flag='-v'
+    model.run_simulation()
+
+    # did it actually work?
+    ds=xr.open_dataset(model.map_outputs()[0])
+    ds_last=ds.isel(time=-1)
+
+    # make sure actual evaporation got reported, and
+    # that the impose evaporation (negative rain) gets reported
+    # here as positive EP, since EP == evaporation - precip.
+    assert np.any( ds_last.EP.values > 0.0 )
+    # salinity should be increase everywhere
+    wet=ds_last.dzz.values>0
+    assert np.all( ds_last.salt.values[ wet ] > 34.00 )
+    assert np.abs( ds_last.temp.values[wet] - 10.0 ).max() < 0.01
+    
+    return model
+
+model=test_met_evap()
+
+
+
