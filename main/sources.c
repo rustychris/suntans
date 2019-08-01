@@ -10,6 +10,7 @@
  * University. All Rights Reserved.
  *
  */
+#include <math.h>
 #include "phys.h"
 #include "sources.h"
 #include "boundaries.h"
@@ -146,6 +147,9 @@ void SaltSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
 void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT *met, int myproc, MPI_Comm comm) {
   int i, k, ktop, iptr;
   REAL depth;
+  REAL dztop;
+  REAL dzmin_heatflux = 0.1; /* Minimum allowable depth of top cell for computation of
+			      * non-penetrative fluxes */
   
   if(prop->metmodel==1){ //Wood et al., Heat Flux model
     int gc;
@@ -164,8 +168,6 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
     
     sigma = 5.67e-8;        // Boltzmann constant (W m^{-2} K^{-4})
     epsilon_w = 0.97;       // Emissivity of water
-    dzmin_heatflux = 0.01;  /* Minimum allowable depth of top cell for computation of
-                             * non-penetrative fluxes */
     T_0 = 273.16;           // Zero C (K)
     T_00 = 237.3;           // Used to calculate latent and sensible heat fluxes
     c_p = 4186.0;             // Specific heat of water at standard conditions (J kg^{-1})
@@ -364,14 +366,12 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
       }
     }
   }else if(prop->metmodel==2 || prop->metmodel==3) { // COARE3.0 HeatFlux Algorithm or constant flux coefficients
-    REAL dztop;
     REAL *H0=met->Htmp;
     
     REAL c_p = 4186.0;     // Specific heat of water at standard conditions (J kg^{-1})
     REAL rhocp = RHO0*c_p;
     REAL dHdT;
     REAL eps = 1e-14;
-    REAL dzmin_heatflux = 0.1;  // Minimum allowable depth of top cell for computation of   
     // shortwave constants
     REAL ksw1; // light extinction coefficient
     REAL z, topface, botface;
@@ -529,6 +529,14 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
           // here for easier debugging.
           A[i][k]=nudge_rate*(met->Tair[i]-phys->T[i][k]);
           B[i][k]=0;
+#ifdef DBG_PROC
+	  if ( A[i][k]!=A[i][k] ) {
+	    printf("[p=%d] HeatSource: A[i=%d][k=%d] = %f\n",myproc,i,k,A[i][k]);
+	    printf("       nudge_rate=%f  Tair=%f   T=%f\n",nudge_rate,met->Tair[i],phys->T[i][k]);
+	    MPI_Finalize();
+	    exit(1);
+	  }
+#endif
         } else {
           A[i][k]=B[i][k]=0.0;
         }
@@ -538,7 +546,18 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
           // this is analogous to PointSourceScalar, but here EP
           // is the adjusted [evap-rain] [m/s], and the scalar
           // value is the existing value.
-          A[i][k] -= phys->T[i][k]* met->EP[i] / grid->dzzold[i][k];
+	  // follow same logic as for salt,and use dzz, not dzzold.
+	  dztop = Max(dzmin_heatflux,grid->dzz[i][k]);
+	  
+          A[i][k] -= phys->T[i][k]* met->EP[i] / dztop;
+#ifdef DBG_PROC
+	  if ( !isfinite(A[i][k]) ) {
+	    printf("[p=%d] HeatSource: after EP A[i=%d][k=%d] = %f\n",myproc,i,k,A[i][k]);
+	    printf("       EP=%f  dzzold=%f\n",met->EP[i],grid->dzzold[i][k]);
+	    MPI_Finalize();
+	    exit(1);
+	  }
+#endif	  
         }
       }
     }
