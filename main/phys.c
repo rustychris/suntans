@@ -1567,6 +1567,11 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
     if(blowup)
       break;
   }
+  if(blowup) {
+    // RH: exiting with nonzero helps in scripting to detect failure
+    MPI_Finalize();
+    exit(1);
+  }
 }
 
 /*
@@ -2288,13 +2293,6 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     }
 #endif
 
-//  // check to make sure we don't have a blow-up
-//  for(j=0;j<grid->Ne;j++) 
-//    for(k=grid->etop[j];k<grid->Nke[j];k++) 
-//      if(phys->utmp[j][k]!=phys->utmp[j][k]) {
-//        printf("0Error in utmp at j=%d k=%d (U***=nan)\n",j,k);
-//        exit(1);
-//      }
 }
 
 /*
