@@ -328,6 +328,9 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
         Cn[i][k-ktop]=dt*src2[i][k]*grid->dzzold[i][k];
 #ifdef DBG_PROC
         if(DBG_PROC==myproc) {
+          if ( src2[i][k]!=src2[i][k] ) {
+            printf("[%d] src2[i=%d][k=%d]=%f\n",myproc,i,k,src2[i][k]);
+          }
           assert( src2[i][k]==src2[i][k] ); // this one is bad.
           assert( grid->dzzold[i][k]==grid->dzzold[i][k] );
           assert( Cn[i][k-ktop]==Cn[i][k-ktop] );

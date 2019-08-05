@@ -538,7 +538,11 @@ void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT 
           // this is analogous to PointSourceScalar, but here EP
           // is the adjusted [evap-rain] [m/s], and the scalar
           // value is the existing value.
-          A[i][k] -= phys->T[i][k]* met->EP[i] / grid->dzzold[i][k];
+          // HERE - maybe that should be dzzold??
+          // dzzold[i][k] is no good, as it can dry out, but
+          // unsure of whether it should be dzzold[i][ctopold],
+          // or like this:
+          A[i][k] -= phys->T[i][k]* met->EP[i] / grid->dzz[i][k];
         }
       }
     }
