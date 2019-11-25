@@ -425,7 +425,7 @@ void OutputPhysicalVariables(gridT *grid, physT *phys, propT *prop,int myproc, i
  *
  */
 void ReadPhysicalVariables(gridT *grid, physT *phys, propT *prop, int myproc, MPI_Comm comm) {
-
+  REAL tmp;
   int i, j;
 
   if(VERBOSE>1 && myproc==0) printf("Reading from rstore...\n");
@@ -508,7 +508,13 @@ void ReadPhysicalVariables(gridT *grid, physT *phys, propT *prop, int myproc, MP
     for(j=0;j<grid->Ne;j++) 
       phys->z0B_spec[j]=prop->z0B;
   } else if(nread==grid->Ne) {
-    printf("Successfully read roughness from restart\n");
+    // RH 2019-11-25: Losing roughness on restarts. Report out more..
+    tmp=0.0;
+    for(j=0;j<grid->Ne;j++)  {
+      tmp+=phys->z0B_spec[j];
+    }
+    tmp/=grid->Ne;
+    printf("Successfully read roughness from restart -- mean(z0B)=%.4e\n",tmp);
   } else {
     printf("WARNING: partial read (%d records) for roughness.  That's not good\n",nread);
     printf("   expected %d records, got %d\n",grid->Ne,nread);
@@ -534,10 +540,6 @@ void ReadPhysicalVariables(gridT *grid, physT *phys, propT *prop, int myproc, MP
   prop->nctime = prop->toffSet*86400.0 + prop->nstart*prop->dt;
 
   UpdateDZ(grid,phys,prop, 0,myproc);
-
-  // RH: copy scalar z0B to z0B_spec
-  for(j=0;j<grid->Ne;j++)
-    phys->z0B_spec[j]=prop->z0B;
 
   // cell centered velocity computed so that this does not 
   // need to be reconsidered 
