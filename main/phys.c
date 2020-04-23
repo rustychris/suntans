@@ -999,7 +999,7 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
           // how much height we have to artificially put back into the cell.
           dz_added = CLAMPHEIGHT - grid->dv[i] - phys->h[i];
 
-          // RCH: In this case, I'm not sure what should be done about dzz.  If left as is, it will be 
+          // RH: In this case, I'm not sure what should be done about dzz.  If left as is, it will be 
           // consistent with fluxes on this step, and that seems necessary for conservation of mass
           // On the next step, though, dzz will be based on the fake phys->h, modified by any fluxes, so
           // then it will be inconsistent with dzzold, and that would lead to freshening.

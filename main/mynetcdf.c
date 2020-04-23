@@ -5429,7 +5429,7 @@ void ReturnZ0BNC(propT *prop, physT *phys, gridT *grid, REAL *htmp, int Nei, int
   }
 
   // most of IC has a time dimension with a single entry.
-  // make sure that is true here to avoid ugly bug.
+  // make sure that is true here to avoid an ugly bug.
   if ((retval=nc_inq_varndims(ncid, varid,&ind)))
     ERR(retval); 
 
