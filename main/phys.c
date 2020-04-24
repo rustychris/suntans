@@ -1272,6 +1272,11 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
   // it also means that a specific index of average output i is integrating over
   // the time step [i-1,i].
   if(prop->calcaverage){
+    // The average values themselves are meaningless, but this will populate
+    // the instantaneous values
+    UpdateAverageVariables(grid,average,phys,met,prop,comm,myproc);
+    UpdateAverageScalars(grid,average,phys,met,prop,comm,myproc);
+    
     if(prop->mergeArrays){
       WriteAverageNCmerge(prop,grid,average,phys,met,blowup,numprocs,comm,myproc);
     }else{

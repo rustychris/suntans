@@ -183,9 +183,13 @@ void UpdateAverageVariables(gridT *grid, averageT *average, physT *phys, metT *m
 
   // This used to be at the top of WriteAverageNC
   prop->avgctr++;
+
+  // Let the user decide whether other types of cells are
+  // useful, and handle all cells in here.
   
-  for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
-    i = grid->cellp[iptr];
+  //for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
+  //i = grid->cellp[iptr];
+  for(i=0;i<grid->Nc;i++) {
     average->w[i][grid->Nk[i]]+=phys->w[i][grid->Nk[i]];
     //sdz=0;
     //Tdz=0;
@@ -205,14 +209,6 @@ void UpdateAverageVariables(gridT *grid, averageT *average, physT *phys, metT *m
       if(prop->calcage){
       	average->agealpha[i][k]+=age->agealpha[i][k];
 	average->agec[i][k]+=age->agec[i][k];
-	/* Calculate mean age on the fly
-        if(age->agec[i][k]>1e-10){
-	    // Calculate the mean online here
-	    average->agemean[i][k]+=age->agealpha[i][k]/age->agec[i][k];
-	}else{
-	    average->agemean[i][k]+=0;
-        }
-	*/
       }
       //sdz+=phys->s[i][k]*grid->dzzold[i][k];
       //Tdz+=phys->T[i][k]*grid->dzzold[i][k];

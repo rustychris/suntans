@@ -4092,9 +4092,10 @@ void WriteAverageNCmerge(propT *prop, gridT *grid, averageT *average, physT *phy
    
    // Output the first time step but don't compute the average
    // note that the first step of output from a restart will not
-   // be accurate, since we don't have the integrate values from
+   // be accurate, since we don't have the integrated values from
    // the previous run.  Still, this should keep the map and
-   // average outputs the same length when ntout==ntaverage
+   // average outputs the same length when ntout==ntaverage, and
+   // eta should be valid here.
    if(!(prop->n%prop->ntaverage) || prop->n==prop->nstart) {
 
      // Work out if we need to open a new averages file or not

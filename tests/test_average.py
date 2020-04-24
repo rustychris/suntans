@@ -205,4 +205,37 @@ def test_2d_average_merged():
         assert np.all(ds.grad.values==e2c)
 
 
+def test_3d_average_merged():
+    """
+    3D run, check that boundary conditions are reasonably reflected in the
+    output (no bogus data on type 3 cells)
+    """
 
+    model=base_model_setup()
+    g=model.grid
+    model.num_procs=4
+    model.config['Nkmax']=20
+    model.config['stairstep']=1
+    model.run_stop =np.datetime64("2018-01-01 02:00")
+    model.config['mergeArrays']=1
+    model.set_run_dir('rundata_3d_average', mode='pristine')
+    model.write()
+
+    eta0=-1 # needs to match the stage BC.
+    model.ic_ds.eta.values[:]=eta0
+    model.write_ic_ds()
+
+    model.partition()
+    model.sun_verbose_flag='-v'
+    model.run_simulation()
+
+    # The actual tests
+    avg=xr.open_dataset(model.avg_outputs()[0])
+    ds=xr.open_dataset(model.map_outputs()[0])
+
+    # helps avoid confusion with caching
+    avg.load() ; avg.close()
+    ds.load() ; ds.close()
+    
+    assert np.allclose( avg.eta.isel(time=0).values, eta0)
+    
