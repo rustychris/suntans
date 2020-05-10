@@ -295,6 +295,10 @@ double GetDefaultValue(char *str, int *status) {
 
     return grav_DEFAULT;
 
+  } else if(!strcmp(str,"dzmin_surface")){
+
+    return dzmin_surface_DEFAULT;
+
   } else if(!strcmp(str,"interp")) {
 
     return interp_DEFAULT;

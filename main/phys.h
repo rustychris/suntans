@@ -195,6 +195,7 @@ typedef struct _propT {
        thetaS, thetaB, nu, nu_H, tau_T, z0T, CdT, z0B, CdB, CdW, relax, epsilon, qepsilon, resnorm, 
        dzsmall, beta, kappa_s, kappa_sH, gamma, kappa_T, kappa_TH, grav, Coriolis_f, CmaxU, CmaxW, 
        laxWendroff_Vertical, latitude;
+  REAL dzmin_surface;
   int ntout, ntoutStore, ntprog, nsteps, nstart, n, ntconserve, nonhydrostatic, cgsolver, maxiters, 
       qmaxiters, hprecond, qprecond, volcheck, masscheck, nonlinear, linearFS, newcells, wetdry, sponge_distance, 
     sponge_decay, thetaramptime, readSalinity, readTemperature, turbmodel, 

@@ -949,7 +949,7 @@ UpdateDZ(gridT *grid, physT *phys, propT *prop, int option, int myproc)
       for(k=0;k<grid->Nk[i];k++) {
         z-=grid->dz[k];// z is the bottom of layer k
         // elm version - modified
-        if(phys->h[i]-z>DZMIN_SURFACE){
+        if(phys->h[i]-z> prop->dzmin_surface){
           // we've hit a real wet layer
           if(!flag) {
             // this is the first wet layer
@@ -4713,12 +4713,16 @@ void ReadProperties(propT **prop, gridT *grid, int myproc)
   (*prop)->CdB = MPI_GetValue(DATAFILE,"CdB","ReadProperties",myproc);
   (*prop)->CdW = MPI_GetValue(DATAFILE,"CdW","ReadProperties",myproc);
   (*prop)->grav= MPI_GetValue(DATAFILE,"grav","ReadProperties",myproc);
+  (*prop)->dzmin_surface= MPI_GetValue(DATAFILE,"dzmin_surface","ReadProperties",myproc);
+  
   (*prop)->turbmodel = (int)MPI_GetValue(DATAFILE,"turbmodel","ReadProperties",myproc);
   (*prop)->dt = MPI_GetValue(DATAFILE,"dt","ReadProperties",myproc);
   (*prop)->Cmax = MPI_GetValue(DATAFILE,"Cmax","ReadProperties",myproc);
   (*prop)->nsteps = (int)MPI_GetValue(DATAFILE,"nsteps","ReadProperties",myproc);
   (*prop)->ntout = (int)MPI_GetValue(DATAFILE,"ntout","ReadProperties",myproc);
   (*prop)->ntoutStore = (int)MPI_GetValue(DATAFILE,"ntoutStore","ReadProperties",myproc);
+
+  
 
   if((*prop)->ntoutStore==0)
     (*prop)->ntoutStore=(*prop)->nsteps;

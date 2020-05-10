@@ -33,14 +33,8 @@
 // the CG epsilon
 #define DRYCELLHEIGHT 1e-3
 
-// merge top layer with next below when it is thinner 
-// than this
-// Had been (20*DRYCELLHEIGHT)
-// with SFB grid, that was getting down to 2.4s time step limitation.
-// Changing this from 2cm to 5cm gives a similar increase in the min_time_step.
-// 2019-07-01: for breach flows, testing 0.10m to see if the timesteps are
-// are limited by vertical or horizontal fluxes
-#define DZMIN_SURFACE (0.25)
+// merge top layer with next below when it is thinner
+// dzmin_surface moved to runtime configuration
 
 // Evaporation (negative rain) will not decrease a cell's depth
 // below this number.
@@ -70,7 +64,7 @@
 
 // 0: disable horizontal advection of turbulence
 // 1: enable
-#define HOR_ADV_TURBULENCE 1
+#define HOR_ADV_TURBULENCE 0
 
 // define global variables for filenames
 char DATADIR[BUFFERLENGTH],
