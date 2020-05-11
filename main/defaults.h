@@ -34,6 +34,11 @@ const int interp_DEFAULT=0;
 */
 const REAL grav_DEFAULT=9.81;
 
+/* surface layer lumping:
+   surface layers thinner than this are joined to a lower layer if it exists
+*/
+const REAL dzmin_surface_DEFAULT=0.25;
+
 /* minumum_depth:
     0: Do nothing
     Positive value: Will be the minimum allowable depth.  
