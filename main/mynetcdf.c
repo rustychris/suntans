@@ -536,7 +536,9 @@ void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int bl
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->uc, prop, grid, "uc",0, numprocs, myproc, comm);
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->vc, prop, grid, "vc",0, numprocs, myproc, comm);
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->nu_tv, prop, grid, "nu_v",0, numprocs, myproc, comm);
-
+    
+    nc_write_3D_merge(ncid,prop->nctimectr,  phys->qT, prop, grid, "turb_q",0, numprocs, myproc, comm);
+    nc_write_3D_merge(ncid,prop->nctimectr,  phys->lT, prop, grid, "turb_l",0, numprocs, myproc, comm);
 
     if(prop->beta>0)
 	nc_write_3D_merge(ncid,prop->nctimectr,  phys->s, prop, grid, "salt",0, numprocs, myproc, comm);
@@ -648,6 +650,18 @@ void WriteOutputNC(propT *prop, gridT *grid, physT *phys, metT *met, int blowup,
     ravel(phys->nu_tv, phys->tmpvar, grid);
     if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
       ERRM(retval,"nu_v");
+
+    if ((retval = nc_inq_varid(ncid, "turb_q", &varid)))
+      ERRM(retval,"turb_q id");
+    ravel(phys->qT, phys->tmpvar, grid);
+    if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
+      ERRM(retval,"turb_q");
+    
+    if ((retval = nc_inq_varid(ncid, "turb_l", &varid)))
+      ERRM(retval,"turb_l id");
+    ravel(phys->lT, phys->tmpvar, grid);
+    if ((retval = nc_put_vara_double(ncid, varid, startthree, countthree, phys->tmpvar )))
+      ERRM(retval,"turb_l");
     
     // Tracers
     if(prop->beta>0){
@@ -1288,7 +1302,33 @@ static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, 
    nc_addattr(ncid, varid,"mesh","suntans_mesh");
    nc_addattr(ncid, varid,"location","face");
    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
-   
+
+   // turb_q
+   if ((retval = nc_def_var(ncid,"turb_q",NC_DOUBLE,3,dimidthree,&varid)))
+     ERR(retval); 
+   if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
+      ERR(retval);
+   if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
+      ERR(retval);
+   nc_addattr(ncid, varid,"long_name","turbulent velocity scale");
+   nc_addattr(ncid, varid,"units","m s-1");
+   nc_addattr(ncid, varid,"mesh","suntans_mesh");
+   nc_addattr(ncid, varid,"location","face");
+   nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+
+   // turb_l
+   if ((retval = nc_def_var(ncid,"turb_l",NC_DOUBLE,3,dimidthree,&varid)))
+     ERR(retval); 
+   if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
+      ERR(retval);
+   if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
+      ERR(retval);
+   nc_addattr(ncid, varid,"long_name","turbulent length scale");
+   nc_addattr(ncid, varid,"units","m");
+   nc_addattr(ncid, varid,"mesh","suntans_mesh");
+   nc_addattr(ncid, varid,"location","face");
+   nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+
    //salinity
    if(prop->beta>0){
      if ((retval = nc_def_var(ncid,"salt",NC_DOUBLE,3,dimidthree,&varid)))
@@ -2121,6 +2161,32 @@ void InitialiseOutputNCugrid(propT *prop, gridT *grid, physT *phys, metT *met, i
       ERR(retval);
    nc_addattr(ncid, varid,"long_name","Vertical eddy viscosity");
    nc_addattr(ncid, varid,"units","m2 s-1");
+   nc_addattr(ncid, varid,"mesh","suntans_mesh");
+   nc_addattr(ncid, varid,"location","face");
+   nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+
+   // turb_q
+   if ((retval = nc_def_var(ncid,"turb_q",NC_DOUBLE,3,dimidthree,&varid)))
+     ERR(retval); 
+   if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
+      ERR(retval);
+   if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
+      ERR(retval);
+   nc_addattr(ncid, varid,"long_name","turbulent velocity scale"); 
+   nc_addattr(ncid, varid,"units","m s-1");
+   nc_addattr(ncid, varid,"mesh","suntans_mesh");
+   nc_addattr(ncid, varid,"location","face");
+   nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+
+   //turb_l
+   if ((retval = nc_def_var(ncid,"turb_l",NC_DOUBLE,3,dimidthree,&varid)))
+     ERR(retval); 
+   if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
+      ERR(retval);
+   if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
+      ERR(retval);
+   nc_addattr(ncid, varid,"long_name","turbulent length scale");
+   nc_addattr(ncid, varid,"units","m");
    nc_addattr(ncid, varid,"mesh","suntans_mesh");
    nc_addattr(ncid, varid,"location","face");
    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
