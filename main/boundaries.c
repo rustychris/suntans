@@ -373,12 +373,14 @@ void WindStress(gridT *grid, physT *phys, propT *prop, metT *met, int myproc) {
   int Nc=grid->Nc; 
   int i,iptr, nf, ne, nc1, nc2, neigh;
   REAL dgf, def1, def2, rampfac;
-  
-  if(prop->thetaramptime>0){
-    rampfac = 1-exp(-prop->rtime/prop->thetaramptime);//Rampup factor 
-  }else{
-    rampfac = 1.0;
-  }
+
+  // I don't think that wind stress needs to be ramped up, and it makes
+  // short testing runs more error-prone.
+  // if(prop->thetaramptime>0){
+  //   rampfac = 1-exp(-prop->rtime/prop->thetaramptime);//Rampup factor 
+  // }else{
+  rampfac = 1.0;
+  //}
   
   if(prop->metmodel>0){
     // Interpolate the spatially variable wind stress onto the edges
