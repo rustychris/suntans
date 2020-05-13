@@ -2922,6 +2922,7 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
   int kk; // for debugging tridiagonal system
   REAL sum, dt=prop->dt, theta=prop->theta, h0, boundary_flag;
   REAL *a, *b, *c, *d, *e1, **E, *a0, *b0, *c0, *d0, theta0, alpha;
+  REAL u_bed_mag; // velocity scale to linearize bed drag
 
   a = phys->a;
   b = phys->b;
@@ -3030,11 +3031,12 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
       
       // Vertical eddy-viscosity interpolated to faces since it is stored
       // at cell-centers.
-      for(k=grid->etop[j]+1;k<grid->Nke[j];k++) 
+      for(k=grid->etop[j]+1;k<grid->Nke[j];k++) {
         c[k]=0.25*(phys->nu_tv[nc1][k-1]+phys->nu_tv[nc2][k-1]+
                    phys->nu_tv[nc1][k]+phys->nu_tv[nc2][k]+
                    prop->laxWendroff_Vertical*(phys->nu_lax[nc1][k-1]+phys->nu_lax[nc2][k-1]+
                                                phys->nu_lax[nc1][k]+phys->nu_lax[nc2][k]));
+      }
       
 #if defined(DBG_PROC) && defined(DBG_EDGE)
       if(myproc==DBG_PROC && j==DBG_EDGE) {
@@ -3044,7 +3046,6 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
         }
       }
 #endif
-      
       
       // Coefficients for the viscous terms.  Face heights are taken as
       // the average of the face heights on either side of the face (not upwinded).
@@ -3071,8 +3072,10 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
       // to avoid changing too much code, still setting a0,b0,c0, but below they are not used
       // at least not if thetaM=1.
       // TL;DR: rusty is punting by disabling vertical advection in hydrostatic runs.
+      // 2020-05-13: RH: returning to including this, as no w is maybe responsible for oddities
+      // in the velocity and nu_T field.
       if(prop->nonlinear && prop->thetaM>=0 && grid->Nke[j]-grid->etop[j]>1) {
-        if( prop->nonhydrostatic ) {
+        if( 1 /* prop->nonhydrostatic */ ) {
           // original
           if(grid->ctop[nc1]>grid->ctop[nc2]) {
             n0=nc2;
@@ -3110,9 +3113,31 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
           }
         }
       }
+      
+      // original code - linearize just with normal u
+      // u_bed_mag=fabs(phys->u[j][grid->Nke[j]-1]);
+      // get tangential from neighboring cells
+      // note that this is not valid for shaved cells
+      u_bed_mag=0;
+      k=grid->Nke[j]-1;
+      // first get tangential velocity in u_bed_mag
+      if ( grid->ctop[nc1]<=k ) {
+        u_bed_mag+=phys->uc[nc1][k]*grid->n2[j] - phys->vc[nc1][k]*grid->n1[j];
+      }
+      if ( grid->ctop[nc2]<=k ) {
+        u_bed_mag+=phys->uc[nc2][k]*grid->n2[j] - phys->vc[nc2][k]*grid->n1[j];
+      }
+      // average 
+      u_bed_mag *= u_bed_mag*0.25;
+      // add normal comp.
+      u_bed_mag += pow(phys->u[j][k],2);
+      // get magnitude
+      u_bed_mag=sqrt(u_bed_mag);
 
+      
       // add on explicit diffusion to RHS (utmp)
       if ( theta!=1 ) { // drag forced fully implicit above, so skip stanza below
+        
         if(grid->Nke[j]-grid->etop[j]>1) { // more than one vertical layer on edge
 
           // Explicit part of the viscous term over wetted parts of edge
@@ -3176,12 +3201,12 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
                                                          (a[grid->Nke[j]-1]+b[grid->Nke[j]-1])*phys->u[j][grid->Nke[j]-1]+
                                                          b[grid->Nke[j]-1]*-phys->u[j][grid->Nke[j]-1]);
             
-          } else { // standard drag law code
+          } else { // standard drag law code                        
             phys->utmp[j][grid->Nke[j]-1]+=dt*(1-theta)*
               (
                a[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2] -
                (a[grid->Nke[j]-1] 
-                + 2.0*phys->CdB[j]*fabs(phys->u[j][grid->Nke[j]-1])/
+                + 2.0*phys->CdB[j]*u_bed_mag/
                 (grid->dzz[nc1][grid->Nke[j]-1]+
                  grid->dzz[nc2][grid->Nke[j]-1]))*
                phys->u[j][grid->Nke[j]-1]
@@ -3214,7 +3239,7 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
             phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*
               (phys->CdB[j])/
               (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
-              fabs(phys->u[j][grid->etop[j]])*phys->u[j][grid->etop[j]];
+              u_bed_mag*phys->u[j][grid->etop[j]];
           }
           // drag on top boundary
           if(phys->CdT[j] == -1){ // no slip on top
@@ -3310,7 +3335,7 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
         }
         else{ // standard drag law
           b[grid->Nke[j]-1]=1.0+theta*dt*(a[grid->Nke[j]-1]+
-              2.0*phys->CdB[j]*fabs(phys->u[j][grid->Nke[j]-1])/
+              2.0*phys->CdB[j]*u_bed_mag/
               (grid->dzz[nc1][grid->Nke[j]-1]+
                grid->dzz[nc2][grid->Nke[j]-1]));
         }
@@ -3331,7 +3356,7 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
              (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]]));
         }
         else{
-          b[grid->etop[j]]+=2.0*theta*dt*fabs(phys->utmp[j][grid->etop[j]])/
+          b[grid->etop[j]]+=2.0*theta*dt*u_bed_mag/
             (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
             (phys->CdB[j]);
         }
@@ -3364,10 +3389,10 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
       }
 #endif
 
-
       // Now add on implicit terms for vertical momentum advection, only if there is more than one layer
       // RH: see above -- disabling this for hydrostatic runs.
-      if(prop->nonhydrostatic && prop->nonlinear && prop->thetaM>=0 && grid->Nke[j]-grid->etop[j]>1) {
+      //   2020-05-13: trying reverting the nonhydro bit
+      if( /* prop->nonhydrostatic && */ prop->nonlinear && prop->thetaM>=0 && grid->Nke[j]-grid->etop[j]>1) {
         for(k=grid->etop[j]+1;k<grid->Nke[j]-1;k++) {
           a[k]+=prop->dt*prop->thetaM*a0[k];
           b[k]+=prop->dt*prop->thetaM*b0[k];
