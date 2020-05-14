@@ -2375,7 +2375,8 @@ static void WPredictor(gridT *grid, physT *phys, propT *prop,
   */
 
  // AB3
-  if(prop->n==1) {
+  // RH: AB is inviting trouble
+  if(1) { //prop->n==1) {
     fab1=1;
     fab2=fab3=0;
 
@@ -2468,8 +2469,9 @@ static void WPredictor(gridT *grid, physT *phys, propT *prop,
 
         // Top cell is filled with momentum from neighboring cells
 	if(prop->conserveMomentum)
-	  for(k=grid->etop[ne];k<grid->ctop[i];k++) 
-	    phys->stmp[i][grid->ctop[i]]+=phys->ut[ne][k]*phys->utmp2[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[k]*grid->Ac[i]);
+	  for(k=grid->etop[ne];k<grid->ctop[i];k++)
+            // RH: index a[] by ctop, not k.
+	    phys->stmp[i][grid->ctop[i]]+=phys->ut[ne][k]*phys->utmp2[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[grid->ctop[i]]*grid->Ac[i]);
       }
 
       // Vertical advection; note that in this formulation first-order upwinding is not implemented.
