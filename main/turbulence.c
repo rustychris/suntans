@@ -35,6 +35,7 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
 	  REAL **nuT, REAL **kappaT, MPI_Comm comm, int myproc) {
   int i, ib, j, iptr, jptr, k, nf, nc1, nc2, ne;
   REAL thetaQ=1, CdAvgT, CdAvgB, *dudz, *dvdz, *drdz, z, *N, *Gh, tauAvgT;
+  REAL tauAvgB; // RH
   REAL A1, A2, B1, B2, C1, E1, E2, E3, Sq, Sm, Sh;
 
   N = dudz = phys->a;
@@ -86,7 +87,10 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
     // wtmp will store src2 for q^2, which is the 2 (Ps+Pb) term
     for(k=grid->ctop[i];k<grid->Nk[i];k++) {
       phys->uold[i][k]=2.0*q[i][k]/B1/(l[i][k]+SMALL);
-      phys->wtmp[i][k]=2.0*fabs((prop->nu+nuT[i][k])*(pow(0.5*(dudz[k]+dudz[k+1]),2)+pow(0.5*(dvdz[k]+dvdz[k+1]),2))+
+      phys->wtmp[i][k]=2.0*fabs(
+                                (prop->nu+nuT[i][k])
+                                // 1e-4 // RH DBG
+                                *(pow(0.5*(dudz[k]+dudz[k+1]),2)+pow(0.5*(dvdz[k]+dvdz[k+1]),2))+
       				prop->grav*(prop->kappa_s+kappaT[i][k])*0.5*(drdz[k]+drdz[k+1]));
 #ifdef DBG_PROC
       ASSERT_FINITE(phys->wtmp[i][k]);
@@ -109,17 +113,38 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
     CdAvgT=0;
     CdAvgB=0;
     tauAvgT=0;
+    tauAvgB=0; // RH - try averaging edge-centered stresses.
     for(nf=0;nf<grid->nfaces[i];nf++) {
       ne = grid->face[i*grid->maxfaces+nf];
-      CdAvgT+=phys->CdT[ne]/3;
-      CdAvgB+=phys->CdB[ne]/3;
-      tauAvgT+=fabs(phys->tau_T[ne])/3;
+      // RH: used to divide these by 3 for average.
+      // that leads to discrepancy between tris and quads
+      CdAvgT+=phys->CdT[ne];
+      CdAvgB+=phys->CdB[ne];
+      tauAvgT+=fabs(phys->tau_T[ne]);
+
+      // Obviosuly not correct, as it's missing tangential
+      // velocity on the edges.  but should at least show some
+      // improvement over existing code if divets and lumps are
+      // actually the cause of turb noise
+      if (grid->Nke[ne]>grid->etop[ne]) {
+        tauAvgB+=phys->CdB[ne] * pow(phys->u[ne][grid->Nke[ne]-1],2);
+      }
     }
+    CdAvgT /= grid->nfaces[i];
+    CdAvgB /= grid->nfaces[i];
+    // RH: minor punt. tau_T is a projection of a vector quantity onto an
+    // edge, so simple average is wrong.  Something perot-ish is maybe more
+    // appropriate, but this is at least correct for the special case of an
+    // axis-aligned quad.
+    tauAvgT /= grid->nfaces[i]/2.0; // something like 0.00005 m2/s2
+    tauAvgB /= grid->nfaces[i]/2.0; 
+
     if(grid->ctop[i]<grid->Nk[i]) {
       // getting a read beyond uc here... because this cell is dry.
       phys->htmp[i]=pow(B1,2.0/3.0)*(CdAvgT*(pow(phys->uc[i][grid->ctop[i]],2)+pow(phys->vc[i][grid->ctop[i]],2))+
                                      tauAvgT);
-      phys->hold[i]=pow(B1,2.0/3.0)*CdAvgB*(pow(phys->uc[i][grid->Nk[i]-1],2)+pow(phys->vc[i][grid->Nk[i]-1],2));
+      // phys->hold[i]=pow(B1,2.0/3.0)*CdAvgB*(pow(phys->uc[i][grid->Nk[i]-1],2)+pow(phys->vc[i][grid->Nk[i]-1],2));
+      phys->hold[i]=pow(B1,2.0/3.0)*tauAvgB;
       if(phys->hold[i]!=phys->hold[i]) {
         assert(B1>=0);
         printf("B1: %f  uc: %f  vc; %f\n",B1,phys->uc[i][grid->Nk[i]-1],
@@ -129,8 +154,8 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
       assert(B1>=0);
       ASSERT_FINITE(phys->uc[i][grid->Nk[i]-1]);
       ASSERT_FINITE(phys->vc[i][grid->Nk[i]-1]);
-      ASSERT_FINITE(CdAvgB); // this is inf.
-      ASSERT_FINITE(phys->hold[i]);// FAILS
+      ASSERT_FINITE(CdAvgB); 
+      ASSERT_FINITE(phys->hold[i]);
       ASSERT_FINITE(phys->htmp[i]);
     } else {
       // dry cell -- 
@@ -226,6 +251,10 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
     
     for(k=grid->ctop[i];k<grid->Nk[i];k++) {
       if(l[i][k]<LBACKGROUND) l[i][k]=LBACKGROUND;
+      // RH
+      if(q[i][k]<QBACKGROUND)
+        q[i][k]=QBACKGROUND;
+
       ASSERT_FINITE(q[i][k]);// fails
       ASSERT_FINITE(l[i][k]);
     }

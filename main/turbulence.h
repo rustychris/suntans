@@ -15,8 +15,10 @@
 // Von Karman's Constant
 #define KAPPA_VK 0.42
 
-// Background length scale
-#define LBACKGROUND 1e-12
+// Background length scale (as q^2 l)
+#define LBACKGROUND (1e-10)
+// Background velocity scale (as q^2)
+#define QBACKGROUND (1e-4*1e-4)
 
 void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l, REAL **Cn_q, REAL **Cn_l, REAL **nuT, REAL **kappaT, MPI_Comm comm, int myproc);
 //void my25(gridT *grid, physT *phys, propT *prop, REAL **q, REAL **l, REAL **Cn_q, REAL **Cn_l, REAL **nuT, REAL **kappaT, MPI_Comm comm, int myproc) ;
