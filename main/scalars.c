@@ -15,6 +15,12 @@
 #include "tvd.h"
 #include "initialization.h"
 
+#ifdef DBG_PROC
+// For getpid()
+# include <sys/types.h>
+# include <unistd.h>
+#endif
+
 #define SMALL_CONSISTENCY 1e-5
 
 REAL smin_value, smax_value;
@@ -219,9 +225,42 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
     } else {
       d[0]=grid->dzzold[i][ktop]*phys->stmp[i][ktop];
       if(src1)
-        d[0]-=src1[i][ktop]*(1-theta)*dt*grid->dzzold[i][ktop]*phys->stmp[i][k];
+        d[0]-=src1[i][ktop]*(1-theta)*dt*grid->dzzold[i][ktop]*phys->stmp[i][ktop];
     }
 
+#ifdef DBG_PROC
+    if(DBG_PROC==myproc) {
+      for(k=0;
+          k<grid->Nk[i]-ktop;
+          k++) {
+        if(d[k]!=d[k]) {
+          // print some info and bail via the assert.
+          printf("[p=%d] scalars d[k=%d] is %f\n",myproc,k,d[k]);
+          printf("  i=%d   ktop=%d Nk[i]=%d\n",i,ktop,grid->Nk[i]);
+          printf("  ctopold=%d  ctop=%d\n",grid->ctopold[i],grid->ctop[i]);
+          printf("  theta=%.4f  dt=%.4f\n",theta,dt);
+          for(k=0;k<grid->Nk[i];k++) {
+            printf("   [k=%d]",k);
+            if(k<ktop) {
+              printf("             ");
+            } else {
+              printf(" d[%d]=%7.3f",k-ktop,d[k-ktop]);
+            }
+            printf(" dzzold[i,k]=%.3f stmp[i,k]=%.6f",grid->dzzold[i][k],phys->stmp[i][k]);
+            if(src1) printf(" src1[i,k]=%f",src1[i][k]);
+            printf("\n");
+          }
+          printf("Spinning! pid=%d\n",getpid());
+          fflush(stdout);
+          while(1) ;
+          for(k=0; k<grid->Nk[i]-ktop; k++) {
+            assert( d[k]==d[k] );
+          }
+        }
+      }
+    }
+#endif
+    
     // These are the advective components of the tridiagonal
     // that use the new velocity
     // RH: TVD no good with <3 layers (code is not safe for < 3 layers)
@@ -234,15 +273,7 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
       GetApAm(ap,am,phys->wp,phys->wm,phys->Cp,phys->Cm,phys->rp,phys->rm,
           phys->wtmp2,grid->dzzold,phys->stmp,i,grid->Nk[i],ktop,prop->dt,prop->TVD);
     }
-    
-#ifdef DBG_PROC
-    if(DBG_PROC==myproc) {
-      for(k=0;k<grid->Nk[i]-ktop;k++) {
-        assert( d[k]==d[k] );
-      }
-    }
-#endif
-    
+        
     // Explicit advection and diffusion
     for(k=ktop+1;k<grid->Nk[i]-1;k++) {
       // with k=12, am[k+1] is nan
