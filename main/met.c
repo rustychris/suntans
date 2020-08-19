@@ -620,7 +620,12 @@ void calcInterpWeights(gridT *grid, propT *prop, REAL *xo, REAL *yo, int Ns, int
 	SunFree(Ctmp[j],Ns+1,"CalcInterpWeights");
       }
       */
-    }// end of kriging   
+    }// end of kriging
+
+    if (VERBOSE) {
+      printf("[p=%d] End of calcInterpWeights, Ns=%d total memory used: %lu\n",
+	     myproc,Ns,TotSpace);
+    }
 } // End of calcInterpWeights
 
 /*

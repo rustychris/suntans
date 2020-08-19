@@ -14,8 +14,8 @@
 
 #include "suntans.h"
 
-unsigned TotSpace;
-int VerboseMemory;
+extern unsigned long TotSpace;
+extern int VerboseMemory;
 char oldAllocFunction[BUFFERLENGTH], oldFreeFunction[BUFFERLENGTH];
 
 /*

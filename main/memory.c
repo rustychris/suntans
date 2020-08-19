@@ -20,6 +20,10 @@
 #include<string.h>
 #include "mympi.h"
 
+int VerboseMemory=1;
+unsigned long TotSpace=0;
+unsigned long HighWater=0;
+
 /*
  * Function: SunMalloc
  * Usage: ptr=(int *)SunMalloc(N*sizeof(int),"Function");
@@ -32,18 +36,18 @@
 void *SunMalloc(const unsigned bytes, const char *function) {
   void *ptr = malloc(bytes);
 
-    //VerboseMemory=1;
-
   if(ptr==NULL) {
     printf("Error.  Out of memory!\n");
-    printf("Total memory: %u, attempted to allocate: %u in function %s\n",
+    printf("Total memory: %lu, attempted to allocate: %u in function %s\n",
 	   TotSpace,bytes,function);
     exit(1);
   } else {
     TotSpace+=bytes;
+    if ( TotSpace > HighWater ) HighWater=TotSpace;
+    
     if(VerboseMemory) {
       if(strcmp(function,oldAllocFunction)) 
-	printf("Allocated %u, Total: %u (%s)\n",bytes,TotSpace,function);
+	printf("Allocated %u, Total: %lu  High water: %lu (%s)\n",bytes,TotSpace,HighWater,function);
       strcpy(oldAllocFunction,function);
     }
     return ptr;
@@ -70,11 +74,11 @@ void SunFree(void *ptr, const unsigned bytes, const char *function) {
     if(bytes<=TotSpace) {
       TotSpace-=bytes;
       if(VerboseMemory && strcmp(function,oldFreeFunction))
-	printf("Freed %u, Total: %u (%s)\n",
+	printf("Freed %u, Total: %lu (%s)\n",
 	       bytes,TotSpace,function);
       strcpy(oldFreeFunction,function);
     } else {
-      printf("Error! Attempting to free %d bytes when only %d have been allocated (%s)!\n",
+      printf("Error! Attempting to free %d bytes when only %lu have been allocated (%s)!\n",
       	     bytes,TotSpace,function);
 
       MPI_Finalize();
