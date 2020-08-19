@@ -196,7 +196,7 @@ void CalculateSubsteps(gridT *grid, physT *phys, propT *prop, int myproc,
     }
     fprintf(prop->SubstepFID,"%f,%f,%d,%d,%d,%d\n",prop->dt,mine.dt_min,mine.nsubsteps,mine.proc,mine.i,mine.k);
     // DBG
-    fflush(prop->SubstepFID);
+    // fflush(prop->SubstepFID);
   }
 
   if ( mine.proc==myproc ) {
