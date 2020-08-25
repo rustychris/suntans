@@ -131,11 +131,18 @@ void FreeTransferArrays(gridT *grid, int myproc, int numprocs, MPI_Comm comm) {
  * This is the non-blocking version of SendRecvCellData2D.
  *
  */
+#define TXRX_CELL2D_TAG 1812
 void ISendRecvCellData2D(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm)
 {
   int n, neigh, neighproc;
   REAL t0=Timer();
 
+  if ( MPI_Barrier(comm) != MPI_SUCCESS ) {
+    printf("[p=%d] Barrier in ISendRecvCellData2D failed!\n",myproc);
+    MPI_Finalize();
+    exit(0);
+  }
+  
   // for each neighbor
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     // get the neighboring processors
@@ -145,16 +152,28 @@ void ISendRecvCellData2D(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm)
     for(n=0;n<grid->num_cells_send[neigh];n++)
       grid->send[neigh][n]=celldata[grid->cell_send[neigh][n]];
 
-    MPI_Isend((void *)(grid->send[neigh]),grid->num_cells_send[neigh],
-	     MPI_DOUBLE,neighproc,1,comm,&(grid->request[neigh])); 
+    if( MPI_SUCCESS != MPI_Isend((void *)(grid->send[neigh]),grid->num_cells_send[neigh],
+                                 MPI_DOUBLE,neighproc,TXRX_CELL2D_TAG,comm,&(grid->request[neigh])) ) {
+      printf("[p=%d] Isend in ISendRecvCellData2D failed!\n",myproc);
+      MPI_Finalize();
+      exit(0);
+    }
   }
 
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     neighproc = grid->myneighs[neigh];
-    MPI_Irecv((void *)(grid->recv[neigh]),grid->num_cells_recv[neigh],
-	     MPI_DOUBLE,neighproc,1,comm,&(grid->request[grid->Nneighs+neigh]));
+    if ( MPI_SUCCESS != MPI_Irecv((void *)(grid->recv[neigh]),grid->num_cells_recv[neigh],
+                                 MPI_DOUBLE,neighproc,TXRX_CELL2D_TAG,comm,&(grid->request[grid->Nneighs+neigh]))) {
+      printf("[p=%d] Irecv in ISendRecvCellData2D failed!\n",myproc);
+      MPI_Finalize();
+      exit(0);
+    }
   }
-  MPI_Waitall(2*grid->Nneighs,grid->request,grid->status);
+  if ( MPI_SUCCESS != MPI_Waitall(2*grid->Nneighs,grid->request,grid->status)) {
+    printf("[p=%d] Waitall in ISendRecvCellData2D failed!\n",myproc);
+    MPI_Finalize();
+    exit(0);
+  }
 
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     for(n=0;n<grid->num_cells_recv[neigh];n++)
