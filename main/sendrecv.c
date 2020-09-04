@@ -14,6 +14,13 @@
 #include "memory.h"
 #include "util.h"
 
+#define TXRX_CELL2D_TAG 10
+#define TXRX_CELL3D_TAG 11
+#define TXRX_EDGE2D_TAG 12
+#define TXRX_EDGE3D_TAG 13
+#define TXRX_W_TAG 14
+
+
 // Private functions (no longer used)
 static void SendRecvCellData2D(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm);
 static void SendRecvCellData3D(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm);
@@ -131,7 +138,6 @@ void FreeTransferArrays(gridT *grid, int myproc, int numprocs, MPI_Comm comm) {
  * This is the non-blocking version of SendRecvCellData2D.
  *
  */
-#define TXRX_CELL2D_TAG 1812
 void ISendRecvCellData2D(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm)
 {
   int n, neigh, neighproc;
@@ -205,13 +211,13 @@ void ISendRecvEdgeData2D(REAL *edgedata, gridT *grid, int myproc,
       grid->send[neigh][n]=edgedata[grid->edge_send[neigh][n]];
 
     MPI_Isend((void *)(grid->send[neigh]),grid->num_edges_send[neigh],
-	     MPI_DOUBLE,neighproc,1,comm,&(grid->request[neigh])); 
+	     MPI_DOUBLE,neighproc,TXRX_EDGE2D_TAG,comm,&(grid->request[neigh])); 
   }
 
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     neighproc = grid->myneighs[neigh];
     MPI_Irecv((void *)(grid->recv[neigh]),grid->num_edges_recv[neigh],
-	     MPI_DOUBLE,neighproc,1,comm,&(grid->request[grid->Nneighs+neigh]));
+	     MPI_DOUBLE,neighproc,TXRX_EDGE2D_TAG,comm,&(grid->request[grid->Nneighs+neigh]));
   }
   MPI_Waitall(2*grid->Nneighs,grid->request,grid->status);
 
@@ -245,14 +251,14 @@ void ISendRecvCellData3D(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm
       nstart+=grid->Nk[grid->cell_send[neigh][n]];
     }
 
-    MPI_Isend((void *)(grid->send[neigh]),grid->total_cells_send[neigh],MPI_DOUBLE,neighproc,1,
-        comm,&(grid->request[neigh])); 
+    MPI_Isend((void *)(grid->send[neigh]),grid->total_cells_send[neigh],MPI_DOUBLE,neighproc,
+	      TXRX_CELL3D_TAG,comm,&(grid->request[neigh])); 
   }
 
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     neighproc = grid->myneighs[neigh];
-    MPI_Irecv((void *)(grid->recv[neigh]),grid->total_cells_recv[neigh],MPI_DOUBLE,neighproc,1,
-        comm,&(grid->request[grid->Nneighs+neigh]));
+    MPI_Irecv((void *)(grid->recv[neigh]),grid->total_cells_recv[neigh],MPI_DOUBLE,neighproc,
+	      TXRX_CELL3D_TAG,comm,&(grid->request[grid->Nneighs+neigh]));
   }
   MPI_Waitall(2*grid->Nneighs,grid->request,grid->status);
 
@@ -290,14 +296,14 @@ void ISendRecvWData(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm)
       nstart+=(1+grid->Nk[grid->cell_send[neigh][n]]);
     }
 
-    MPI_Isend((void *)(grid->send[neigh]),grid->total_cells_sendW[neigh],MPI_DOUBLE,neighproc,1,
-        comm,&(grid->request[neigh])); 
+    MPI_Isend((void *)(grid->send[neigh]),grid->total_cells_sendW[neigh],MPI_DOUBLE,neighproc,
+	      TXRX_W_TAG,comm,&(grid->request[neigh])); 
   }
 
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     neighproc = grid->myneighs[neigh];
-    MPI_Irecv((void *)(grid->recv[neigh]),grid->total_cells_recvW[neigh],MPI_DOUBLE,neighproc,1,
-        comm,&(grid->request[grid->Nneighs+neigh]));
+    MPI_Irecv((void *)(grid->recv[neigh]),grid->total_cells_recvW[neigh],MPI_DOUBLE,neighproc,
+	      TXRX_W_TAG,comm,&(grid->request[grid->Nneighs+neigh]));
   }
   MPI_Waitall(2*grid->Nneighs,grid->request,grid->status);
 
@@ -335,14 +341,14 @@ void ISendRecvEdgeData3D(REAL **edgedata, gridT *grid, int myproc, MPI_Comm comm
       nstart+=grid->Nke[grid->edge_send[neigh][n]];
     }
 
-    MPI_Isend((void *)(grid->send[neigh]),grid->total_edges_send[neigh],MPI_DOUBLE,neighproc,1,
-        comm,&(grid->request[neigh])); 
+    MPI_Isend((void *)(grid->send[neigh]),grid->total_edges_send[neigh],MPI_DOUBLE,neighproc,
+	      TXRX_EDGE3D_TAG,comm,&(grid->request[neigh])); 
   }
 
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     neighproc = grid->myneighs[neigh];
-    MPI_Irecv((void *)(grid->recv[neigh]),grid->total_edges_recv[neigh],MPI_DOUBLE,neighproc,1,
-        comm,&(grid->request[grid->Nneighs+neigh]));
+    MPI_Irecv((void *)(grid->recv[neigh]),grid->total_edges_recv[neigh],MPI_DOUBLE,neighproc,
+	      TXRX_EDGE3D_TAG,comm,&(grid->request[grid->Nneighs+neigh]));
   }
   MPI_Waitall(2*grid->Nneighs,grid->request,grid->status);
 
