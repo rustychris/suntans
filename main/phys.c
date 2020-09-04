@@ -1267,6 +1267,11 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       WriteOutputNC(prop, grid, phys, met, blowup, myproc);
     }
   }
+
+  // RH: trying to narrow down how we're getting stuck between UpdateAverageScalars
+  // and WriteAverageNCmerge.
+  MPI_Barrier(comm);
+  
   // Output the average arrays -- these are probably meaningless in this step, but
   // this keeps the average output and map output the same size.
   // it also means that a specific index of average output i is integrating over
