@@ -26,5 +26,8 @@ void ISendRecvEdgeData2D(REAL *edgedata, gridT *grid, int myproc, MPI_Comm comm)
 void CheckCommunicateCells(gridT *maingrid, gridT *localgrid, int myproc, MPI_Comm comm);
 void CheckCommunicateEdges(gridT *maingrid, gridT *localgrid, int myproc, MPI_Comm comm);
 
+void SyncBarrier(int tag,int myproc, MPI_Comm comm);
+
+
 #endif
 

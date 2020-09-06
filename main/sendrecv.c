@@ -808,3 +808,24 @@ static void SendRecvEdgeData3D(REAL **edgedata, gridT *grid, int myproc, MPI_Com
   SunFree(Nrecv,grid->Nneighs*sizeof(int),"SendRecvEdgeData3D");
 }
 
+
+/*
+ * A more specific MPI_Barrier.  Make sure that all processes are here,
+ * specific to a given tag value.
+ */
+void SyncBarrier(int tag,int myproc, MPI_Comm comm)
+{
+  int buffer[1];
+  if(myproc==0) {
+    buffer[0]=tag;
+  } else {
+    buffer[0]=-1;
+  }
+  
+  MPI_Bcast(buffer, 1, MPI_INT, 0, comm);
+  if (buffer[0]!=tag) {
+    printf("[p=%d] SyncBarrier(tag=%d) got tag=%d!\n",myproc,tag,buffer[0]);
+    MPI_Finalize();
+    exit(1);
+  }
+}

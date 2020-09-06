@@ -66,8 +66,13 @@ void HorizontalFaceScalars(gridT *grid, physT *phys, propT *prop, REAL **scal, R
       }
     }
   }
+  // RH: so far this seems like the most likely place that MPI is getting tripped
+  // up.
+  SyncBarrier(3000,myproc,comm);
   ISendRecvCellData3D(sumQ,grid,myproc,comm);  
+  SyncBarrier(3005,myproc,comm);
   ISendRecvCellData3D(sumQC,grid,myproc,comm);  
+  SyncBarrier(3010,myproc,comm);
 
   for(jptr=grid->edgedist[0];jptr<grid->edgedist[1];jptr++) {
     j = grid->edgep[jptr];

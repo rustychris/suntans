@@ -1269,8 +1269,8 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
   }
 
   // RH: trying to narrow down how we're getting stuck between UpdateAverageScalars
-  // and WriteAverageNCmerge.
-  MPI_Barrier(comm);
+  // and WriteAverageNCmerge. 
+  SyncBarrier(1000,myproc,comm); // DBG
   
   // Output the average arrays -- these are probably meaningless in this step, but
   // this keeps the average output and map output the same size.
@@ -1280,7 +1280,11 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
     // The average values themselves are meaningless, but this will populate
     // the instantaneous values
     UpdateAverageVariables(grid,average,phys,met,prop,comm,myproc);
+    SyncBarrier(1001,myproc,comm); // DBG
+
     UpdateAverageScalars(grid,average,phys,met,prop,comm,myproc);
+    
+    SyncBarrier(1002,myproc,comm); // DBG
     
     if(prop->mergeArrays){
       WriteAverageNCmerge(prop,grid,average,phys,met,blowup,numprocs,comm,myproc);

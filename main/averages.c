@@ -292,6 +292,7 @@ void UpdateAverageScalars(gridT *grid, averageT *average, physT *phys, metT *met
   if(prop->TVD){
     //Salt
     if(prop->beta>0){
+      SyncBarrier(2000,myproc,comm);
       // Compute the scalar on the vertical faces (for horiz. advection)
       HorizontalFaceScalars(grid,phys,prop,phys->s,phys->boundary_s,prop->TVDsalt,comm,myproc); 
       for(jptr=grid->edgedist[0];jptr<grid->edgedist[4];jptr++) {
@@ -310,6 +311,8 @@ void UpdateAverageScalars(gridT *grid, averageT *average, physT *phys, metT *met
 
     //Temperature
     if(prop->gamma>0){
+      SyncBarrier(2005,myproc,comm);
+
       HorizontalFaceScalars(grid,phys,prop,phys->T,phys->boundary_T,prop->TVDtemp,comm,myproc); 
       for(jptr=grid->edgedist[0];jptr<grid->edgedist[4];jptr++) {
         j = grid->edgep[jptr]; 
@@ -326,9 +329,9 @@ void UpdateAverageScalars(gridT *grid, averageT *average, physT *phys, metT *met
   } else { // No TVD
     // FIX
   }//End flux calculation
- /*
+  /*
    * Compute salinity and temperature fluxes using central-difference
-  */
+   */
 
     //Salt and temp
 /*
