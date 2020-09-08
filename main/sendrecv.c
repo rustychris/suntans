@@ -236,7 +236,8 @@ void ISendRecvEdgeData2D(REAL *edgedata, gridT *grid, int myproc,
  * processors using nonblocking sends/recvs.
  *
  */
-void ISendRecvCellData3D(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm)
+void ISendRecvCellData3DTag(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm,
+			    int tag)
 {
   int k, n, nstart, neigh, neighproc;
   REAL t0=Timer();
@@ -252,13 +253,13 @@ void ISendRecvCellData3D(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm
     }
 
     MPI_Isend((void *)(grid->send[neigh]),grid->total_cells_send[neigh],MPI_DOUBLE,neighproc,
-	      TXRX_CELL3D_TAG,comm,&(grid->request[neigh])); 
+	      tag,comm,&(grid->request[neigh])); 
   }
 
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     neighproc = grid->myneighs[neigh];
     MPI_Irecv((void *)(grid->recv[neigh]),grid->total_cells_recv[neigh],MPI_DOUBLE,neighproc,
-	      TXRX_CELL3D_TAG,comm,&(grid->request[grid->Nneighs+neigh]));
+	      tag,comm,&(grid->request[grid->Nneighs+neigh]));
   }
   MPI_Waitall(2*grid->Nneighs,grid->request,grid->status);
 

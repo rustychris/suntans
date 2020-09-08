@@ -18,7 +18,10 @@
 void AllocateTransferArrays(gridT **grid, int myproc, int numprocs, MPI_Comm comm);
 void FreeTransferArrays(gridT *grid, int myproc, int numprocs, MPI_Comm comm);
 void ISendRecvCellData2D(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm);
-void ISendRecvCellData3D(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm);
+void ISendRecvCellData3DTag(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm,int tag);
+// void ISendRecvCellData3D(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm);
+#define ISendRecvCellData3D(celldata, grid,myproc,comm) \
+  ISendRecvCellData3DTag(celldata,grid,myproc,comm,__LINE__)
 void ISendRecvWData(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm);
 void ISendRecvEdgeData3D(REAL **edgedata, gridT *grid, int myproc, MPI_Comm comm);
 void ISendRecvEdgeData2D(REAL *edgedata, gridT *grid, int myproc, MPI_Comm comm);
