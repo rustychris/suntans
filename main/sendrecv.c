@@ -138,16 +138,16 @@ void FreeTransferArrays(gridT *grid, int myproc, int numprocs, MPI_Comm comm) {
  * This is the non-blocking version of SendRecvCellData2D.
  *
  */
-void ISendRecvCellData2D(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm)
+void ISendRecvCellData2DTag(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm,int tag)
 {
   int n, neigh, neighproc;
   REAL t0=Timer();
 
-  if ( MPI_Barrier(comm) != MPI_SUCCESS ) {
-    printf("[p=%d] Barrier in ISendRecvCellData2D failed!\n",myproc);
-    MPI_Finalize();
-    exit(0);
-  }
+  // if ( MPI_Barrier(comm) != MPI_SUCCESS ) {
+  //   printf("[p=%d] Barrier in ISendRecvCellData2D failed!\n",myproc);
+  //   MPI_Finalize();
+  //   exit(0);
+  // }
   
   // for each neighbor
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
@@ -159,7 +159,7 @@ void ISendRecvCellData2D(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm)
       grid->send[neigh][n]=celldata[grid->cell_send[neigh][n]];
 
     if( MPI_SUCCESS != MPI_Isend((void *)(grid->send[neigh]),grid->num_cells_send[neigh],
-                                 MPI_DOUBLE,neighproc,TXRX_CELL2D_TAG,comm,&(grid->request[neigh])) ) {
+                                 MPI_DOUBLE,neighproc,tag,comm,&(grid->request[neigh])) ) {
       printf("[p=%d] Isend in ISendRecvCellData2D failed!\n",myproc);
       MPI_Finalize();
       exit(0);
@@ -169,7 +169,7 @@ void ISendRecvCellData2D(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm)
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     neighproc = grid->myneighs[neigh];
     if ( MPI_SUCCESS != MPI_Irecv((void *)(grid->recv[neigh]),grid->num_cells_recv[neigh],
-                                 MPI_DOUBLE,neighproc,TXRX_CELL2D_TAG,comm,&(grid->request[grid->Nneighs+neigh]))) {
+                                 MPI_DOUBLE,neighproc,tag,comm,&(grid->request[grid->Nneighs+neigh]))) {
       printf("[p=%d] Irecv in ISendRecvCellData2D failed!\n",myproc);
       MPI_Finalize();
       exit(0);
@@ -199,8 +199,8 @@ void ISendRecvCellData2D(REAL *celldata, gridT *grid, int myproc, MPI_Comm comm)
  *
  * added by Yi-Ju Chou for wave modeling. 5/1/2010
  */
-void ISendRecvEdgeData2D(REAL *edgedata, gridT *grid, int myproc, 
-			 MPI_Comm comm)
+void ISendRecvEdgeData2DTag(REAL *edgedata, gridT *grid, int myproc, 
+			    MPI_Comm comm,int tag)
 {
   int n, neigh, neighproc;
 
@@ -211,13 +211,13 @@ void ISendRecvEdgeData2D(REAL *edgedata, gridT *grid, int myproc,
       grid->send[neigh][n]=edgedata[grid->edge_send[neigh][n]];
 
     MPI_Isend((void *)(grid->send[neigh]),grid->num_edges_send[neigh],
-	     MPI_DOUBLE,neighproc,TXRX_EDGE2D_TAG,comm,&(grid->request[neigh])); 
+	     MPI_DOUBLE,neighproc,tag,comm,&(grid->request[neigh])); 
   }
 
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     neighproc = grid->myneighs[neigh];
     MPI_Irecv((void *)(grid->recv[neigh]),grid->num_edges_recv[neigh],
-	     MPI_DOUBLE,neighproc,TXRX_EDGE2D_TAG,comm,&(grid->request[grid->Nneighs+neigh]));
+	     MPI_DOUBLE,neighproc,tag,comm,&(grid->request[grid->Nneighs+neigh]));
   }
   MPI_Waitall(2*grid->Nneighs,grid->request,grid->status);
 
@@ -282,7 +282,7 @@ void ISendRecvCellData3DTag(REAL **celldata, gridT *grid, int myproc, MPI_Comm c
  * processors using nonblocking sends/recvs.
  *
  */
-void ISendRecvWData(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm)
+void ISendRecvWDataTag(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm,int tag)
 {
   int k, n, nstart, neigh, neighproc;
   REAL t0=Timer();
@@ -298,13 +298,13 @@ void ISendRecvWData(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm)
     }
 
     MPI_Isend((void *)(grid->send[neigh]),grid->total_cells_sendW[neigh],MPI_DOUBLE,neighproc,
-	      TXRX_W_TAG,comm,&(grid->request[neigh])); 
+	      tag,comm,&(grid->request[neigh])); 
   }
 
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     neighproc = grid->myneighs[neigh];
     MPI_Irecv((void *)(grid->recv[neigh]),grid->total_cells_recvW[neigh],MPI_DOUBLE,neighproc,
-	      TXRX_W_TAG,comm,&(grid->request[grid->Nneighs+neigh]));
+	      tag,comm,&(grid->request[grid->Nneighs+neigh]));
   }
   MPI_Waitall(2*grid->Nneighs,grid->request,grid->status);
 
@@ -327,7 +327,7 @@ void ISendRecvWData(REAL **celldata, gridT *grid, int myproc, MPI_Comm comm)
  * processors using onblocking sends/recvs.
  *
  */
-void ISendRecvEdgeData3D(REAL **edgedata, gridT *grid, int myproc, MPI_Comm comm)
+void ISendRecvEdgeData3DTag(REAL **edgedata, gridT *grid, int myproc, MPI_Comm comm, int tag)
 {
   int k, n, nstart, neigh, neighproc;
   REAL t0=Timer();
@@ -343,13 +343,13 @@ void ISendRecvEdgeData3D(REAL **edgedata, gridT *grid, int myproc, MPI_Comm comm
     }
 
     MPI_Isend((void *)(grid->send[neigh]),grid->total_edges_send[neigh],MPI_DOUBLE,neighproc,
-	      TXRX_EDGE3D_TAG,comm,&(grid->request[neigh])); 
+	      tag,comm,&(grid->request[neigh])); 
   }
 
   for(neigh=0;neigh<grid->Nneighs;neigh++) {
     neighproc = grid->myneighs[neigh];
     MPI_Irecv((void *)(grid->recv[neigh]),grid->total_edges_recv[neigh],MPI_DOUBLE,neighproc,
-	      TXRX_EDGE3D_TAG,comm,&(grid->request[grid->Nneighs+neigh]));
+	      tag,comm,&(grid->request[grid->Nneighs+neigh]));
   }
   MPI_Waitall(2*grid->Nneighs,grid->request,grid->status);
 
@@ -817,16 +817,26 @@ static void SendRecvEdgeData3D(REAL **edgedata, gridT *grid, int myproc, MPI_Com
 void SyncBarrier(int tag,int myproc, MPI_Comm comm)
 {
   int buffer[1];
+  printf("[p=%d] SyncBarrier(tag=%d) ENTER\n",myproc,tag);
+  fflush(stdout);
+  
   if(myproc==0) {
     buffer[0]=tag;
   } else {
     buffer[0]=-1;
   }
-  
+
+  // This part ensures that all processes are at the same SyncBarrier call 
   MPI_Bcast(buffer, 1, MPI_INT, 0, comm);
   if (buffer[0]!=tag) {
     printf("[p=%d] SyncBarrier(tag=%d) got tag=%d!\n",myproc,tag,buffer[0]);
     MPI_Finalize();
     exit(1);
   }
+  // And this makes sure that everyone is caught up.  Otherwise some nodes
+  // might race ahead.
+  MPI_Barrier(comm);
+  
+  printf("[p=%d] SyncBarrier(tag=%d) EXIT\n",myproc,tag);
+  fflush(stdout);
 }

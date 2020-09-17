@@ -1176,6 +1176,8 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
     InitBoundaryData(prop, grid, myproc, comm);
   }
 
+  printf("[p=%d] Initializing boundary info\n",myproc);
+
   // get the boundary velocities (boundaries.c)
   BoundaryVelocities(grid,phys,prop,myproc, comm); 
   // get the openboundary flux (boundaries.c)
@@ -1209,6 +1211,8 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
 
   // Initialise the meteorological forcing input fields
   if(prop->metmodel>0){
+    printf("[p=%d] Initializing met forcing\n",myproc);
+    
     if (prop->gamma==0.0){
       if(myproc==0) printf("Warning gamma must be > 1 for heat flux model.\n");
     }else{
@@ -1240,6 +1244,7 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
 
   // Initialise the average arrays and netcdf file
   if(prop->calcaverage>0){
+    printf("[p=%d] Initializing averaging\n",myproc);
     AllocateAverageVariables(grid,&average,prop);
     ZeroAverageVariables(grid,average,prop);
     if(prop->mergeArrays==0)
@@ -1277,6 +1282,8 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
   // it also means that a specific index of average output i is integrating over
   // the time step [i-1,i].
   if(prop->calcaverage){
+    printf("[p=%d] Output initial averaged values\n",myproc);
+
     // The average values themselves are meaningless, but this will populate
     // the instantaneous values
     UpdateAverageVariables(grid,average,phys,met,prop,comm,myproc);
@@ -1292,7 +1299,7 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       WriteAverageNC(prop,grid,average,phys,met,blowup,comm,myproc);
     }
   }
-  
+
   // main time loop
   for(n=prop->nstart+1;n<=prop->nsteps+prop->nstart;n++) {
 

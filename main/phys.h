@@ -199,7 +199,7 @@ typedef struct _propT {
   int ntout, ntoutStore, ntprog, nsteps, nstart, n, ntconserve, nonhydrostatic, cgsolver, maxiters, 
       qmaxiters, hprecond, qprecond, volcheck, masscheck, nonlinear, linearFS, newcells, wetdry, sponge_distance, 
     sponge_decay, thetaramptime, readSalinity, readTemperature, turbmodel, 
-    TVD, horiTVD, vertTVD, TVDsalt, TVDtemp, TVDturb, laxWendroff, stairstep, AB, TVDmomentum, conserveMomentum,
+    horiTVD, vertTVD, TVDsalt, TVDtemp, TVDturb, laxWendroff, stairstep, AB, TVDmomentum, conserveMomentum,
     mergeArrays, computeSediments;
   // number of substeps for upwind advection to have finite-volume CFL<=1.
   int nsubsteps;
