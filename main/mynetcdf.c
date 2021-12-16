@@ -8,6 +8,7 @@
 #include "mynetcdf.h"
 #include "merge.h"
 #include "sediments.h"
+#include "turbulence.h" // temporary for debugging
 
 /***********************************************
 * Private functions
@@ -36,8 +37,110 @@ static void nc_write_3D_merge(int ncid, int tstep, REAL **array, propT *prop, gr
                               char *varname, int isw, int numprocs, int myproc, MPI_Comm comm);
 static void nc_write_3Dedge_merge(int ncid, int tstep, REAL **array, propT *prop, gridT *grid,
                                   char *varname,int isw, int numprocs, int myproc, MPI_Comm comm);
+static void nc_write_2Dedge_merge(int ncid, int tstep, REAL *array, propT *prop, gridT *grid,
+                                  char *varname, int numprocs, int myproc, MPI_Comm comm);
 
 static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, metT *met, int myproc);
+
+static void cell_centered_bed_stress_interp(physT *phys, gridT *grid,REAL *taux,REAL *tauy);
+static void cell_centered_bed_stress_center(physT *phys, gridT *grid,REAL *taux,REAL *tauy);
+
+
+/*
+ * Compute the cell-centered components of the bed stress, following
+ * same method as computing cell-centered velocity
+ *
+ * u = 1/Area * Sum_{faces} u_{face} normal_{face} df_{face}*d_{ef,face}
+ */
+static void cell_centered_bed_stress_interp(physT *phys, gridT *grid, REAL *taux, REAL *tauy) {
+  /*
+   * taux: destination for x component of cell-centered be stress [Nc]
+   * tauy: destination for y component of cell-centered be stress [Nc]
+   * calculates tau_B, mimicking phys.c, since this is typically not calculated.
+   */
+  int k, n, j, nf, i, iptr, nc1,nc2;
+  REAL sum, u_bed_mag, tau_j;
+
+  for(i=0;i<grid->Nc;i++) { taux[i]=tauy[i]=0.0; }
+  for(j=0;j<grid->Ne;j++) { phys->tau_B[j]=0.0; }
+  
+  // for each computational cell (non-stage defined)
+  for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
+    n=grid->cellp[iptr];
+
+    // over each face
+    for(nf=0;nf<grid->nfaces[n];nf++) {
+      j = grid->face[n*grid->maxfaces+nf];
+
+      // Replicate phys.c calculation of bed velocity
+      u_bed_mag=0;
+      k=grid->Nke[j]-1;
+      nc1 = grid->grad[2*j];
+      nc2 = grid->grad[2*j+1];
+
+      if(nc1==-1) nc1=nc2;
+      if(nc2==-1) nc2=nc1;
+
+      // first get tangential velocity in u_bed_mag
+      if ( grid->ctop[nc1]<=k ) {
+        u_bed_mag+=phys->uc[nc1][k]*grid->n2[j] - phys->vc[nc1][k]*grid->n1[j];
+      }
+      if ( grid->ctop[nc2]<=k ) {
+        u_bed_mag+=phys->uc[nc2][k]*grid->n2[j] - phys->vc[nc2][k]*grid->n1[j];
+      }
+      // square and average 
+      u_bed_mag *= u_bed_mag*0.25;
+      // add normal comp.
+      u_bed_mag += pow(phys->u[j][k],2);
+      // get as magnitude
+      u_bed_mag = sqrt(u_bed_mag);
+      // edge-normal quadratic drag law
+      tau_j=phys->CdB[j]*u_bed_mag * phys->u[j][k];
+      phys->tau_B[j]=tau_j;
+      taux[n]+=tau_j*grid->n1[j]*grid->def[n*grid->maxfaces+nf]*grid->df[j];
+      tauy[n]+=tau_j*grid->n2[j]*grid->def[n*grid->maxfaces+nf]*grid->df[j];
+    }
+    taux[n]/=grid->Ac[n];
+    tauy[n]/=grid->Ac[n];
+  }
+}
+
+/* Compute cell-centered components of bed stress in the same manner as sediments.c,
+   using cell-centered velocity.
+*/
+static void cell_centered_bed_stress_center(physT *phys, gridT *grid, REAL *taux, REAL *tauy) {
+  /*
+   * taux: destination for x component of cell-centered be stress [Nc]
+   * tauy: destination for y component of cell-centered be stress [Nc]
+   */
+  int k, n, j, nf, i, iptr;
+  REAL u,v,u2,CdB,tauB,umag;
+
+  for(i=0;i<grid->Nc;i++) { taux[i]=tauy[i]=0.0; }
+  
+  // for each computational cell (non-stage defined)
+  for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
+    n=grid->cellp[iptr];
+    
+    u=phys->uc[n][grid->Nk[n]-1];
+    v=phys->vc[n][grid->Nk[n]-1];
+    
+    u2=pow(u,2)+pow(v,2);
+
+    // cell-averaged drag coefficient
+    CdB=0.0;
+    for(nf=0;nf<grid->nfaces[n];nf++) {
+      j = grid->face[n*grid->maxfaces+nf];
+      CdB+=phys->CdB[j];
+    }
+    CdB /= grid->nfaces[n];
+    
+    tauB=CdB*u2;
+    umag=sqrt(u2);
+    taux[n]=tauB * u/umag;
+    tauy[n]=tauB * v/umag;
+  }
+}
 
 /*########################################################
 *
@@ -158,19 +261,17 @@ void nc_read_2D(int ncid, char *vname, size_t start[2], size_t count[2], REAL **
 
     int j, n, ii;
     int varid, retval;
-    //REAL tmpvec[ (int)count[0] * (int)count[1] ];
     REAL outdata[(int)count[0]][(int)count[1]];
 
-  //  printf("nc_read_2d -- Proc: %d, vname: %s, start[%d][%d], count[%d][%d]",myproc,vname,(int)start[0],(int)start[1],(int)count[0],(int)count[1]);
+    // printf("nc_read_2d -- Proc: %d, vname: %s, start[%d][%d], count[%d][%d]",myproc,vname,(int)start[0],(int)start[1],(int)count[0],(int)count[1]);
   
     //Read the data
     if ((retval = nc_inq_varid(ncid, vname, &varid)))
 	ERR(retval);
-    //if ((retval = nc_get_vara_double(ncid, varid, start, count, &tmparray[0][0]))) 
-    //  ERR(retval); 
     
     if ((retval = nc_get_vara_double(ncid, varid, start, count, &outdata[0][0]))) 
-	ERR(retval); 
+	ERR(retval);
+    
     // Loop through and insert the vector values into an array
     for(n=0;n<(int)count[0];n++){
 	for(j=0;j<(int)count[1];j++){
@@ -375,6 +476,32 @@ static void nc_write_3D_merge(int ncid, int tstep, REAL **array, propT *prop, gr
     }
 }
 
+
+/*
+ * Function: nc_write_2Dedge_merge()
+ * -------------------------------
+ * Merges a 2D (time-varying) edge variable and writes to netcdf
+ */
+static void nc_write_2Dedge_merge(int ncid, int tstep, REAL *array, propT *prop, gridT *grid, char *varname, int numprocs, int myproc, MPI_Comm comm){
+
+   int varid, retval,i,k;
+   size_t starttwo[] = {tstep,0};
+   size_t counttwo[] = {1,-1 /* Ne */};
+
+   // Places result directly in merged3DVector, using only the first Ne
+   // elements
+   MergeEdgeCentered2DArray(array,grid,numprocs,myproc,comm);   
+
+   if(myproc==0){
+     counttwo[1]=mergedGrid->Ne;
+     if ((retval = nc_inq_varid(ncid, varname, &varid)))
+       ERR(retval);
+
+     if ((retval = nc_put_vara_double(ncid, varid, starttwo, counttwo, &merged3DVector[0])))
+       ERR(retval);
+   }
+}
+
 /*
  * Function: nc_write_3Dedge_merge()
  * -------------------------------
@@ -421,150 +548,152 @@ static void nc_write_3Dedge_merge(int ncid, int tstep, REAL **array, propT *prop
 * 
 */
 void WriteOutputNCmerge(propT *prop, gridT *grid, physT *phys, metT *met, int blowup, int numprocs, int myproc, MPI_Comm comm){
-   int ncid;
-   int varid, retval, k;
-   // Start and count vectors for one, two and three dimensional arrays
-   size_t startone[] = {prop->nctimectr};
-   size_t countone[] = {1};
-   size_t starttwo[] = {prop->nctimectr,0};
-   size_t counttwo[] = {1,grid->Nc};
-   size_t startthree[] = {prop->nctimectr,0,0};
-   size_t countthree[] = {1,grid->Nkmax,grid->Nc};
-   const size_t countthreew[] = {1,grid->Nkmax+1,grid->Nc};
-   const REAL time[] = {prop->nctime};
-   char str[BUFFERLENGTH], filename[BUFFERLENGTH];
+  int iptr,i; // RH for debugging
 
+  int ncid;
+  int varid, retval, k;
+  // Start and count vectors for one, two and three dimensional arrays
+  size_t startone[] = {prop->nctimectr};
+  size_t countone[] = {1};
+  size_t starttwo[] = {prop->nctimectr,0};
+  size_t counttwo[] = {1,grid->Nc};
+  size_t startthree[] = {prop->nctimectr,0,0};
+  size_t countthree[] = {1,grid->Nkmax,grid->Nc};
+  const size_t countthreew[] = {1,grid->Nkmax+1,grid->Nc};
+  const REAL time[] = {prop->nctime};
+  char str[2*BUFFERLENGTH], filename[BUFFERLENGTH];
 
-   nc_set_log_level(3); // This helps with debugging errors
+  nc_set_log_level(3); // This helps with debugging errors
    
-   //REAL *tmpvar, *tmpvarE;
-   // Need to write the 3-D arrays as vectors
-   //tmpvar = (REAL *)SunMalloc(grid->Nc*grid->Nkmax*sizeof(REAL),"WriteOutputNC");
-   //tmpvarE = (REAL *)SunMalloc(grid->Ne*grid->Nkmax*sizeof(REAL),"WriteOutputNC");
-
-   // RH: this used to be prop->n==1+prop->nstart, but that misses
-   // the first output step.
-   if(!(prop->n%prop->ntout) || prop->n==prop->nstart || blowup) {
+  // RH: this used to be prop->n==1+prop->nstart, but that misses
+  // the first output step.
+  if(!(prop->n%prop->ntout) || prop->n==prop->nstart || blowup) {
     
-     // RH: same, used to be prop->n==1+prop->nstart
-     if( (prop->nctimectr>=prop->nstepsperncfile) || prop->n==prop->nstart){
-       if(prop->n > 1+prop->nstart){
-         // Close the old netcdf file
-         if(myproc==0){
-           printf("Closing opened output netcdf file...\n");
-           MPI_NCClose(prop->outputNetcdfFileID);
-         }
-       }
-
-	// Open the new netcdf file
-	MPI_GetFile(filename,DATAFILE,"outputNetcdfFile","WriteOutputNCmerge",myproc);
-
-	sprintf(str,"%s_%04d.nc",filename,prop->ncfilectr);
+    // RH: same, used to be prop->n==1+prop->nstart
+    if( (prop->nctimectr>=prop->nstepsperncfile) || prop->n==prop->nstart){
+      if(prop->n > 1+prop->nstart){
+	// Close the old netcdf file
 	if(myproc==0){
-	    //prop->outputNetcdfFileID = MPI_NCOpen(str,NC_NETCDF4,"OpenFiles",myproc);
-	    prop->outputNetcdfFileID = MPI_NCOpen(str,NC_CLASSIC_MODEL|NC_NETCDF4,"WriteOutputNCmerge",myproc);
-	}else{
-	    prop->outputNetcdfFileID=-1;
+	  printf("Closing opened output netcdf file...\n");
+	  MPI_NCClose(prop->outputNetcdfFileID);
 	}
-	
-	// Initialise a new output file
-	if(myproc==0)
-	    InitialiseOutputNCugridMerge(prop, phys, grid, met, myproc);
-		
-	// Reset the time counter
-	prop->nctimectr = 0;
+      }
+       
+      // Open the new netcdf file
+      MPI_GetFile(filename,DATAFILE,"outputNetcdfFile","WriteOutputNCmerge",myproc);
 
-	prop->ncfilectr += 1;
-	startone[0] = prop->nctimectr;
+      sprintf(str,"%s_%04d.nc",filename,prop->ncfilectr);
+      if(myproc==0){
+	prop->outputNetcdfFileID = MPI_NCOpen(str,NC_CLASSIC_MODEL|NC_NETCDF4,"WriteOutputNCmerge",myproc);
+	// Initialise a new output file
+	InitialiseOutputNCugridMerge(prop, phys, grid, met, myproc);
+      }else{
+	prop->outputNetcdfFileID=-1;
+      }
+	
+      // Reset the time counter
+      prop->nctimectr = 0;
+      prop->ncfilectr += 1;
+      startone[0] = prop->nctimectr;
     }
-     // DBG - can be removed.
-    //  else {
-    //    if(myproc==0) 
-    //      printf("Not opening output nc: prop->n=%d nstart=%d prop->ntout=%d nctimectr=%d nstepsperncfile=%d\n",
-    //             prop->n,prop->nstart,prop->ntout,prop->nctimectr,prop->nstepsperncfile);
-    //  }
     ncid = prop->outputNetcdfFileID;
 
     if(myproc==0 && VERBOSE>1){ 
-      if(!blowup) 
-        printf("Outputting data to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
-      else
-        printf("Outputting blowup data to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
+      if(!blowup) {
+	printf("Outputting data to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
+      } else {
+	printf("Outputting blowup data to netcdf at step %d of %d\n",prop->n,prop->nsteps+prop->nstart);
+      }
     }
     if(myproc==0){ 
-	/* Write the time data*/
+      /* Write the time data*/
       if ((retval = nc_inq_varid(ncid, "time", &varid))) {
-        printf("ncid: %d\n",ncid);
-        ERRM(retval,"nc_inq_varid('time'), proc 0");
+	printf("ncid: %d\n",ncid);
+	ERRM(retval,"nc_inq_varid('time'), proc 0");
       }
-      if ((retval = nc_put_vara_double(ncid, varid, startone, countone, time )))
-        ERRM(retval,"proc 0, save time");
-
+      if ((retval = nc_put_vara_double(ncid, varid, startone, countone, time ))) {
+	ERRM(retval,"proc 0, save time");
+      }
+       
       countthree[2] = mergedGrid->Nc;
       counttwo[1] = mergedGrid->Nc;
     }
-
+     
     /* Write to the physical variables*/
-
+     
     // 2D cell-centered variables
     nc_write_2D_merge(ncid, prop->nctimectr, phys->h, prop, grid, "eta", numprocs, myproc, comm);
+
+    // Need a place to work up cell centered data
+    //  phys->tmpvar is 3D cell centered, Nkmax
+    //  phys->tmpvarW is 3D cell centered, Nkmax+1
+    double *tmpx=phys->tmpvar; // [Nc*Nk], but we use only need to be [Nc]
+    double *tmpy=phys->tmpvarW; // [Nc*(Nk+1)], but here we use only [Nc]
+    cell_centered_bed_stress_interp(phys,grid,tmpx,tmpy); // also updates phys->tau_B
+    nc_write_2D_merge(ncid, prop->nctimectr, tmpx, prop, grid, "tauB_x", numprocs, myproc, comm);
+    nc_write_2D_merge(ncid, prop->nctimectr, tmpy, prop, grid, "tauB_y", numprocs, myproc, comm);
+    nc_write_2Dedge_merge(ncid, prop->nctimectr, phys->tau_B, prop, grid, "tauB", numprocs, myproc, comm); // no var defined yet
+
+    cell_centered_bed_stress_center(phys,grid,tmpx,tmpy);
+    nc_write_2D_merge(ncid, prop->nctimectr, tmpx, prop, grid, "tauBc_x", numprocs, myproc, comm);
+    nc_write_2D_merge(ncid, prop->nctimectr, tmpy, prop, grid, "tauBc_y", numprocs, myproc, comm);
 
     // RH: variables to diagnose time limiting cells.
     nc_write_2D_merge_int(ncid, prop->nctimectr, phys->limiting_cell, prop, grid, "limiting_cell", numprocs, myproc, comm);
     nc_write_2D_merge(ncid, prop->nctimectr, phys->min_time_step, prop, grid, "min_time_step", numprocs, myproc, comm);
-    
-    if(prop->metmodel>0){
-    	// Atmospheric flux variables
-	nc_write_2D_merge(ncid,prop->nctimectr, met->Uwind, prop, grid, "Uwind", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->Vwind, prop, grid, "Vwind", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->Tair, prop, grid, "Tair", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->Pair, prop, grid, "Pair", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->rain, prop, grid, "rain", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->RH, prop, grid, "RH", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->cloud, prop, grid, "cloud", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->Hs, prop, grid, "Hs", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->Hl, prop, grid, "Hl", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->Hlw, prop, grid, "Hlw", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->Hsw, prop, grid, "Hsw", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->tau_x, prop, grid, "tau_x", numprocs, myproc, comm);
-	nc_write_2D_merge(ncid,prop->nctimectr,  met->tau_y, prop, grid, "tau_y", numprocs, myproc, comm);
-	if(prop->beta > 0)
-	    nc_write_2D_merge(ncid,prop->nctimectr,  met->EP, prop, grid, "EP", numprocs, myproc, comm);
-
+     
+    if(prop->metmodel>0) {
+      // Atmospheric flux variables
+      nc_write_2D_merge(ncid,prop->nctimectr, met->Uwind, prop, grid, "Uwind", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->Vwind, prop, grid, "Vwind", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->Tair, prop, grid, "Tair", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->Pair, prop, grid, "Pair", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->rain, prop, grid, "rain", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->RH, prop, grid, "RH", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->cloud, prop, grid, "cloud", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->Hs, prop, grid, "Hs", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->Hl, prop, grid, "Hl", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->Hlw, prop, grid, "Hlw", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->Hsw, prop, grid, "Hsw", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->tau_x, prop, grid, "tau_x", numprocs, myproc, comm);
+      nc_write_2D_merge(ncid,prop->nctimectr,  met->tau_y, prop, grid, "tau_y", numprocs, myproc, comm);
+      if(prop->beta > 0) {
+	nc_write_2D_merge(ncid,prop->nctimectr,  met->EP, prop, grid, "EP", numprocs, myproc, comm);
+      }
     }
     // 3D cell-centered variables
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->uc, prop, grid, "uc",0, numprocs, myproc, comm);
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->vc, prop, grid, "vc",0, numprocs, myproc, comm);
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->nu_tv, prop, grid, "nu_v",0, numprocs, myproc, comm);
-    
+     
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->qT, prop, grid, "turb_q",0, numprocs, myproc, comm);
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->lT, prop, grid, "turb_l",0, numprocs, myproc, comm);
-
+     
     if(prop->beta>0)
-	nc_write_3D_merge(ncid,prop->nctimectr,  phys->s, prop, grid, "salt",0, numprocs, myproc, comm);
-
+      nc_write_3D_merge(ncid,prop->nctimectr,  phys->s, prop, grid, "salt",0, numprocs, myproc, comm);
+     
     if(prop->gamma>0)
-	nc_write_3D_merge(ncid,prop->nctimectr,  phys->T, prop, grid, "temp",0, numprocs, myproc, comm);
-
+      nc_write_3D_merge(ncid,prop->nctimectr,  phys->T, prop, grid, "temp",0, numprocs, myproc, comm);
+     
     if( (prop->gamma>0) || (prop->beta>0) ) 
-	nc_write_3D_merge(ncid,prop->nctimectr,  phys->rho, prop, grid, "rho",0, numprocs, myproc, comm);
-
+      nc_write_3D_merge(ncid,prop->nctimectr,  phys->rho, prop, grid, "rho",0, numprocs, myproc, comm);
+     
     if(prop->calcage){
-	nc_write_3D_merge(ncid,prop->nctimectr,  age->agec, prop, grid, "agec",0, numprocs, myproc, comm);
-	nc_write_3D_merge(ncid,prop->nctimectr,  age->agealpha, prop, grid, "agealpha",0, numprocs, myproc, comm);
+      nc_write_3D_merge(ncid,prop->nctimectr,  age->agec, prop, grid, "agec",0, numprocs, myproc, comm);
+      nc_write_3D_merge(ncid,prop->nctimectr,  age->agealpha, prop, grid, "agealpha",0, numprocs, myproc, comm);
     }
-  
+     
     // Vertical velocity 
     nc_write_3D_merge(ncid,prop->nctimectr,  phys->w, prop, grid, "w",1, numprocs, myproc, comm);
-    
+     
     // 3D edge-based variables 
     nc_write_3Dedge_merge(ncid,prop->nctimectr,  phys->u, prop, grid, "U",0, numprocs, myproc, comm);
-
-        
+     
+     
     /* Update the time counter*/
     prop->nctimectr += 1;  
-   }
-     
+  }
+   
 } // End of function
 
 
@@ -1377,51 +1506,75 @@ static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, 
    //age
    if(prop->calcage>0){
      if ((retval = nc_def_var(ncid,"agec",NC_DOUBLE,3,dimidthree,&varid)))
-      ERR(retval);
+       ERR(retval);
      if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
-      ERR(retval);
+       ERR(retval);
      if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
-      ERR(retval);
-    nc_addattr(ncid, varid,"long_name","Age concentration");
-    nc_addattr(ncid, varid,"units","");
-    nc_addattr(ncid, varid,"mesh","suntans_mesh");
-    nc_addattr(ncid, varid,"location","face");
-    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
-    
-    if ((retval = nc_def_var(ncid,"agealpha",NC_DOUBLE,3,dimidthree,&varid)))
-      ERR(retval);
-    if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
-      ERR(retval);
-    if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
-      ERR(retval);
-    nc_addattr(ncid, varid,"long_name","Age alpha parameter");
-    nc_addattr(ncid, varid,"units","seconds");
-    nc_addattr(ncid, varid,"mesh","suntans_mesh");
-    nc_addattr(ncid, varid,"location","face");
-    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+       ERR(retval);
+     nc_addattr(ncid, varid,"long_name","Age concentration");
+     nc_addattr(ncid, varid,"units","");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+     
+     if ((retval = nc_def_var(ncid,"agealpha",NC_DOUBLE,3,dimidthree,&varid)))
+       ERR(retval);
+     if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
+       ERR(retval);
+     if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
+       ERR(retval);
+     nc_addattr(ncid, varid,"long_name","Age alpha parameter");
+     nc_addattr(ncid, varid,"units","seconds");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+   }
 
+   { // Bed stress - evaluated at edges, interpolated to center
+     if ((retval = nc_def_var(ncid,"tauB_x",NC_DOUBLE,2,dimidtwo,&varid)))
+       ERR(retval); 
+     nc_addattr(ncid, varid,"long_name","Bed stress x-component, cell-centered from u_edge");
+     nc_addattr(ncid, varid,"units","N m-2");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time yv xv");
+     
+     if ((retval = nc_def_var(ncid,"tauB_y",NC_DOUBLE,2,dimidtwo,&varid)))
+       ERR(retval); 
+     nc_addattr(ncid, varid,"long_name","Bed stress y-component, cell-centered from u_edge");
+     nc_addattr(ncid, varid,"units","N m-2");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time yv xv");   
+     
+     if ((retval = nc_def_var(ncid,"tauB",NC_DOUBLE,2,(int[]){dimid_time,dimid_Ne},&varid)))
+       ERR(retval); 
+     nc_addattr(ncid, varid,"long_name","Bed stress edge-centered");
+     nc_addattr(ncid, varid,"units","N m-2");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","edge");
+     nc_addattr(ncid, varid,"coordinates","time ye xe");   
+   }
+   
+   { // Bed stress evaluated at cell center
+     if ((retval = nc_def_var(ncid,"tauBc_x",NC_DOUBLE,2,dimidtwo,&varid)))
+       ERR(retval); 
+     nc_addattr(ncid, varid,"long_name","Bed stress x-component, cell-centered from uc,vc");
+     nc_addattr(ncid, varid,"units","N m-2");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time yv xv");
+     
+     if ((retval = nc_def_var(ncid,"tauBc_y",NC_DOUBLE,2,dimidtwo,&varid)))
+       ERR(retval); 
+     nc_addattr(ncid, varid,"long_name","Bed stress y-component, cell-centered from uc,vc");
+     nc_addattr(ncid, varid,"units","N m-2");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time yv xv");   
+   }
 
-    /*
-    //Age source term
-    dimidtwo[0] = dimid_Nk;
-    dimidtwo[1] = dimid_Nc;
-    if ((retval = nc_def_var(ncid,"agesource",NC_DOUBLE,2,dimidtwo,&varid)))
-      ERR(retval);
-    if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
-      ERR(retval);
-    if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
-      ERR(retval);
-    nc_addattr(ncid, varid,"long_name","Age source term (>0 =source");
-    nc_addattr(ncid, varid,"units","");
-    nc_addattr(ncid, varid,"mesh","suntans_mesh");
-    nc_addattr(ncid, varid,"location","face");
-    nc_addattr(ncid, varid,"coordinates","z_r yv xv");
-    // Set back to time for the other variables
-    dimidtwo[0] = dimid_time;
-    */
-
-  }
-
+   
    //U
    dimidthree[2] = dimid_Ne;
    if ((retval = nc_def_var(ncid,"U",NC_DOUBLE,3,dimidthree,&varid)))
@@ -2993,109 +3146,105 @@ void InitialiseAverageNCugridMerge(propT *prop, gridT *grid, averageT *average, 
    nc_addattr(ncid, varid,"mesh","suntans_mesh");
    nc_addattr(ncid, varid,"location","face");
    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
-   
- 
+
    //salinity
    if(prop->beta>0){
      if ((retval = nc_def_var(ncid,"salt",NC_DOUBLE,3,dimidthree,&varid)))
-      ERR(retval);
-     if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
-      ERR(retval);
-     if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
-      ERR(retval);
-    nc_addattr(ncid, varid,"long_name","Time-averaged Salinity");
-    nc_addattr(ncid, varid,"units","ppt");
-    nc_addattr(ncid, varid,"mesh","suntans_mesh");
-    nc_addattr(ncid, varid,"location","face");
-    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
-
-    // Depth-integrated salinity
-    if ((retval = nc_def_var(ncid,"s_dz",NC_DOUBLE,2,dimidtwo,&varid)))
        ERR(retval);
-    nc_addattr(ncid, varid,"long_name","Instantaneous depth-integrated salinity");
-    nc_addattr(ncid, varid,"units","psu m");
-    nc_addattr(ncid, varid,"mesh","suntans_mesh");
-    nc_addattr(ncid, varid,"location","face");
-    nc_addattr(ncid, varid,"coordinates","time yv xv");
-    
+     if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
+       ERR(retval);
+     if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
+       ERR(retval);
+     nc_addattr(ncid, varid,"long_name","Time-averaged Salinity");
+     nc_addattr(ncid, varid,"units","ppt");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+     
+     // Depth-integrated salinity
+     if ((retval = nc_def_var(ncid,"s_dz",NC_DOUBLE,2,dimidtwo,&varid)))
+       ERR(retval);
+     nc_addattr(ncid, varid,"long_name","Instantaneous depth-integrated salinity");
+     nc_addattr(ncid, varid,"units","psu m");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time yv xv");
    }
    
    //temperature
    if(prop->gamma>0){
      if ((retval = nc_def_var(ncid,"temp",NC_DOUBLE,3,dimidthree,&varid)))
-      ERR(retval); 
+       ERR(retval); 
      if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
-      ERR(retval);
-     if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
-      ERR(retval);
-    nc_addattr(ncid, varid,"long_name","Time-averaged Water temperature");
-    nc_addattr(ncid, varid,"units","degrees C");
-    nc_addattr(ncid, varid,"mesh","suntans_mesh");
-    nc_addattr(ncid, varid,"location","face");
-    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
-
-     // Depth-integrated temperature
-    if ((retval = nc_def_var(ncid,"T_dz",NC_DOUBLE,2,dimidtwo,&varid)))
        ERR(retval);
-    nc_addattr(ncid, varid,"long_name","Instantaneous depth-integrated temperature");
-    nc_addattr(ncid, varid,"units","degrees C m");
-    nc_addattr(ncid, varid,"mesh","suntans_mesh");
-    nc_addattr(ncid, varid,"location","face");
-    nc_addattr(ncid, varid,"coordinates","time yv xv");
-    
+     if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
+       ERR(retval);
+     nc_addattr(ncid, varid,"long_name","Time-averaged Water temperature");
+     nc_addattr(ncid, varid,"units","degrees C");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+     
+     // Depth-integrated temperature
+     if ((retval = nc_def_var(ncid,"T_dz",NC_DOUBLE,2,dimidtwo,&varid)))
+       ERR(retval);
+     nc_addattr(ncid, varid,"long_name","Instantaneous depth-integrated temperature");
+     nc_addattr(ncid, varid,"units","degrees C m");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time yv xv");
    }
    
    //rho
    if( (prop->gamma>0) || (prop->beta>0) ){
      if ((retval = nc_def_var(ncid,"rho",NC_DOUBLE,3,dimidthree,&varid)))
-      ERR(retval);
+       ERR(retval);
      if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
-      ERR(retval);
+       ERR(retval);
      if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
-      ERR(retval);
-    nc_addattr(ncid, varid,"long_name","Time-averaged Water density");
-    nc_addattr(ncid, varid,"units","kg m-3");
-    nc_addattr(ncid, varid,"mesh","suntans_mesh");
-    nc_addattr(ncid, varid,"location","face");
-    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+       ERR(retval);
+     nc_addattr(ncid, varid,"long_name","Time-averaged Water density");
+     nc_addattr(ncid, varid,"units","kg m-3");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
    }
    
    //age
    if(prop->calcage>0){
      if ((retval = nc_def_var(ncid,"agec",NC_DOUBLE,3,dimidthree,&varid)))
-      ERR(retval);
+       ERR(retval);
      if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
-      ERR(retval);
+       ERR(retval);
      if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
-      ERR(retval);
-    nc_addattr(ncid, varid,"long_name","Age concentration");
-    nc_addattr(ncid, varid,"units","");
-    nc_addattr(ncid, varid,"mesh","suntans_mesh");
-    nc_addattr(ncid, varid,"location","face");
-    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
-    
-    if ((retval = nc_def_var(ncid,"agealpha",NC_DOUBLE,3,dimidthree,&varid)))
-      ERR(retval);
-    if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
-      ERR(retval);
-    if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
-      ERR(retval);
-    nc_addattr(ncid, varid,"long_name","Age alpha parameter");
-    nc_addattr(ncid, varid,"units","seconds");
-    nc_addattr(ncid, varid,"mesh","suntans_mesh");
-    nc_addattr(ncid, varid,"location","face");
-    nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+       ERR(retval);
+     nc_addattr(ncid, varid,"long_name","Age concentration");
+     nc_addattr(ncid, varid,"units","");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
+     
+     if ((retval = nc_def_var(ncid,"agealpha",NC_DOUBLE,3,dimidthree,&varid)))
+       ERR(retval);
+     if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
+       ERR(retval);
+     if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
+       ERR(retval);
+     nc_addattr(ncid, varid,"long_name","Age alpha parameter");
+     nc_addattr(ncid, varid,"units","seconds");
+     nc_addattr(ncid, varid,"mesh","suntans_mesh");
+     nc_addattr(ncid, varid,"location","face");
+     nc_addattr(ncid, varid,"coordinates","time z_r yv xv");
    }
-
 
    //U_F
    dimidthree[2] = dimid_Ne;
    if ((retval = nc_def_var(ncid,"U_F",NC_DOUBLE,3,dimidthree,&varid)))
      ERR(retval); 
    if ((retval = nc_def_var_fill(ncid,varid,nofill,&FILLVALUE))) // Sets a _FillValue attribute
-      ERR(retval);
+     ERR(retval);
    if ((retval = nc_def_var_deflate(ncid,varid,0,DEFLATE,DEFLATELEVEL))) // Compresses the variable
-      ERR(retval);
+     ERR(retval);
    nc_addattr(ncid, varid,"long_name","Time-averaged edge flux rate");
    nc_addattr(ncid, varid,"units","m3 s-1");
    nc_addattr(ncid, varid,"mesh","suntans_mesh");
@@ -4145,7 +4294,7 @@ void WriteAverageNCmerge(propT *prop, gridT *grid, averageT *average, physT *phy
    size_t countthree[] = {1,grid->Nkmax,grid->Nc};
    const size_t countthreew[] = {1,grid->Nkmax+1,grid->Nc};
    const REAL time[] = {prop->nctime};
-   char str[BUFFERLENGTH], filename[BUFFERLENGTH];
+   char str[2*BUFFERLENGTH], filename[BUFFERLENGTH];
 
    nc_set_log_level(3); // This helps with debugging errors
    

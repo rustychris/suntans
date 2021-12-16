@@ -81,10 +81,6 @@ typedef struct _physT {
   REAL *boundary_h;
   REAL *boundary_flag;
 
-  // Point sources ??
-  // REAL **
-  // REAL **point_
-
   REAL **nu_tv;
   REAL **kappa_tv;
   REAL **nu_lax;

@@ -172,13 +172,13 @@ static void InitializeMergeEdges(gridT *grid, int numprocs, int myproc, MPI_Comm
     size3D+=grid->Nke[j];
   }
   send3DESize=(int *)SunMalloc(numprocs*sizeof(int),"InitializeMerging");
+  send2DESize=(int *)SunMalloc(numprocs*sizeof(int),"InitializeMerging");
  
   if(myproc!=0) {
     Ne_computational = grid->edgedist[EDGEMAX]-grid->edgedist[0];
     MPI_Send(&(Ne_computational),1,MPI_INT,0,1,comm);     
     MPI_Send(&(size3D),1,MPI_INT,0,1,comm);     
   } else {
-
     Ne_all=(int *)SunMalloc(numprocs*sizeof(int),"InitializeMerging");
     Ne_all[0]=grid->edgedist[EDGEMAX]-grid->edgedist[0];
 
@@ -373,6 +373,39 @@ void MergeCellCentered3DArray(REAL **localArray, gridT *grid, int numprocs, int 
       for(i=0;i<Nc_all[p];i++) {
 	for(k=0;k<mergedGrid->Nk[mnptr_all[p][i]];k++)
 	  merged3DArray[mnptr_all[p][i]][k]=localTempMergeArray[m++];
+      }
+    }
+  }
+}
+
+void MergeEdgeCentered2DArray(REAL *localArray, gridT *grid, int numprocs, int myproc, MPI_Comm comm) {
+  /* Places result directly in the first Ne elements of merged3DVector */
+  int j, k=0, m, p, jptr;
+  MPI_Status status;
+
+  if(myproc!=0) {
+    m=0;
+    for(jptr=grid->edgedist[0];jptr<grid->edgedist[EDGEMAX];jptr++) {
+      j=grid->edgep[jptr];
+      localTempEMergeArray[m++]=localArray[j];
+    }
+    MPI_Send(&(localTempEMergeArray[0]),
+	     // analogous to send2DESize[myproc], but easy enough to calculate
+	     // rather than worry about tracking it separately. needs to match
+	     // the construction of Ne_all in InitializeMergeEdges()
+	     grid->edgedist[EDGEMAX] - grid->edgedist[0], 
+	     MPI_DOUBLE,0,1,comm);       
+  } else {
+    for(jptr=grid->edgedist[0];jptr<grid->edgedist[EDGEMAX];jptr++) {
+      j=grid->edgep[jptr];
+      merged3DVector[grid->eptr[j]]=localArray[j];
+    }
+
+    for(p=1;p<numprocs;p++) {
+      MPI_Recv(&(localTempEMergeArray[0]),Ne_all[p],MPI_DOUBLE,p,1,comm,&status);      
+      m=0;
+      for(j=0;j<Ne_all[p];j++) {
+	merged3DVector[eptr_all[p][j]]=localTempEMergeArray[m++];
       }
     }
   }

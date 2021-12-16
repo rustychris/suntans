@@ -28,7 +28,7 @@
 
 /* Netcdf error */
 #define ERRCODE 2
-#define ERR(e) {printf("Error: %s\n", nc_strerror(e)); MPI_Finalize(); exit(ERRCODE);}
+#define ERR(e) {printf("Error: %s (%d)\n", nc_strerror(e), __LINE__); MPI_Finalize(); exit(ERRCODE);}
 #define ERRM(e,m) {printf("Error: (%s) %s\n", m, nc_strerror(e)); MPI_Finalize(); exit(ERRCODE);}
 
 /* Public functions */

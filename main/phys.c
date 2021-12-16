@@ -2910,12 +2910,27 @@ static void CGSolveQ(REAL **q, REAL **src, REAL **c, gridT *grid, physT *phys, p
  */
 static void EddyViscosity(gridT *grid, physT *phys, propT *prop, REAL **wnew, MPI_Comm comm, int myproc)
 {
+  int iptr,i,k;
+  
   switch(prop->turbmodel) {
   case 1:
     my25(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
+
+    // check that we get some nonzero l
+    // This is checking out okay...
+    for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
+      i=grid->cellp[iptr];
+      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+	if ( phys->lT[i][k] < 1e-11 ) {
+	  printf("[p=%d] turb l[i=%d][k=%d]=%f should be greater than %f\n",
+		 myproc,i,k,phys->lT[i][k],LBACKGROUND);
+	}
+      }
+    }
     break;
   case 10:
     parabolic_viscosity(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
+    break;
   }
 }
 
@@ -2939,6 +2954,7 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
   REAL sum, dt=prop->dt, theta=prop->theta, h0, boundary_flag;
   REAL *a, *b, *c, *d, *e1, **E, *a0, *b0, *c0, *d0, theta0, alpha;
   REAL u_bed_mag; // velocity scale to linearize bed drag
+  REAL dz_bed_fric; // the dz used in friction calculations at the bed
 
   a = phys->a;
   b = phys->b;
@@ -3143,13 +3159,21 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
       if ( grid->ctop[nc2]<=k ) {
         u_bed_mag+=phys->uc[nc2][k]*grid->n2[j] - phys->vc[nc2][k]*grid->n1[j];
       }
-      // average 
+      // square and average 
       u_bed_mag *= u_bed_mag*0.25;
       // add normal comp.
       u_bed_mag += pow(phys->u[j][k],2);
       // get magnitude
       u_bed_mag=sqrt(u_bed_mag);
 
+      // precalc layer thickness for bed stress calc
+      if (grid->Nke[j]-grid->etop[j]>1) {
+	dz_bed_fric=0.5*(  grid->dzz[nc1][grid->Nke[j]-1]
+			 + grid->dzz[nc2][grid->Nke[j]-1]);
+      } else {
+	dz_bed_fric=0.5*(  grid->dzz[nc1][grid->etop[j]]
+			   + grid->dzz[nc2][grid->etop[j]]);
+      }
       
       // add on explicit diffusion to RHS (utmp)
       if ( theta!=1 ) { // drag forced fully implicit above, so skip stanza below
@@ -3217,16 +3241,18 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
                                                          (a[grid->Nke[j]-1]+b[grid->Nke[j]-1])*phys->u[j][grid->Nke[j]-1]+
                                                          b[grid->Nke[j]-1]*-phys->u[j][grid->Nke[j]-1]);
             
-          } else { // standard drag law code                        
+          } else { // standard drag law code
+	    // RH: CdB is being calculated based on dzf, but here we use average of dzz
+	    // for flat bed, no difference. My old friction code used Max(DZMIN,dzf).
+	    // Try that, as it seems less likely to create artifacts
             phys->utmp[j][grid->Nke[j]-1]+=dt*(1-theta)*
               (
                a[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2] -
                (a[grid->Nke[j]-1] 
-                + 2.0*phys->CdB[j]*u_bed_mag/
-                (grid->dzz[nc1][grid->Nke[j]-1]+
-                 grid->dzz[nc2][grid->Nke[j]-1]))*
+                + phys->CdB[j]*u_bed_mag/dz_bed_fric)*
                phys->u[j][grid->Nke[j]-1]
                );
+	    
 
 #if defined(DBG_PROC) && defined(DBG_EDGE)
             if(myproc==DBG_PROC && j==DBG_EDGE) {
@@ -3236,15 +3262,13 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
                      dt*(1-theta)*(
                                    a[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2] -
                                    (a[grid->Nke[j]-1]
-                                    + 2.0*phys->CdB[j]*fabs(phys->u[j][grid->Nke[j]-1])/
-                                    (grid->dzz[nc1][grid->Nke[j]-1]+
-                                     grid->dzz[nc2][grid->Nke[j]-1]))*
-                                   phys->u[j][grid->Nke[j]-1])
+                                    + phys->CdB[j]*fabs(phys->u[j][grid->Nke[j]-1])/dz_bed_fric)
+				   * phys->u[j][grid->Nke[j]-1])
                      );
             }
 #endif
           }
-        } else{  // one layer for edge
+        } else {  // one layer for edge
           // drag on bottom boundary
           if(phys->CdB[j] == -1){ // no slip on bottom
             phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*
@@ -3252,10 +3276,8 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
                ((grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
                 (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])));
           } else { // standard drag law formation on bottom
-            phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*
-              (phys->CdB[j])/
-              (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
-              u_bed_mag*phys->u[j][grid->etop[j]];
+            phys->utmp[j][grid->etop[j]]-=dt*(1-theta)*
+              phys->CdB[j]/dz_bed_fric * u_bed_mag*phys->u[j][grid->etop[j]];
           }
           // drag on top boundary
           if(phys->CdT[j] == -1){ // no slip on top
@@ -3351,9 +3373,7 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
         }
         else{ // standard drag law
           b[grid->Nke[j]-1]=1.0+theta*dt*(a[grid->Nke[j]-1]+
-              2.0*phys->CdB[j]*u_bed_mag/
-              (grid->dzz[nc1][grid->Nke[j]-1]+
-               grid->dzz[nc2][grid->Nke[j]-1]));
+              phys->CdB[j]*u_bed_mag/dz_bed_fric);
         }
         a[grid->Nke[j]-1]=-theta*dt*a[grid->Nke[j]-1];
 
@@ -3372,9 +3392,7 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
              (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]]));
         }
         else{
-          b[grid->etop[j]]+=2.0*theta*dt*u_bed_mag/
-            (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
-            (phys->CdB[j]);
+          b[grid->etop[j]]+=theta*dt*u_bed_mag*phys->CdB[j]/dz_bed_fric;
         }
         // account for no slip conditions which are assumed if CdT = -1 
         if(phys->CdT[j] == -1){
