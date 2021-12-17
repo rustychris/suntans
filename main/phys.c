@@ -793,13 +793,29 @@ void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
       // ratio=0.5*grid->dzf[j][grid->Nke[j]-1]/phys->z0B_spec[j];
       // the log of this can end up zero or negative.
       // This way it is always greater than 1.
-      ratio=(0.5*grid->dzf[j][grid->Nke[j]-1] + phys->z0B_spec[j])/phys->z0B_spec[j];
-      if ( ratio==0.00 ) {
-        phys->CdB[j]=100;
-      } else {
-        phys->CdB[j]=pow(log(ratio)/KAPPA_VK,-2);
-        if(phys->CdB[j]>100) { phys->CdB[j]=100; }
-      }
+      // But the code below is missing the correction for log-profile within the cell
+      //   ratio=(0.5*grid->dzf[j][grid->Nke[j]-1] + phys->z0B_spec[j])/phys->z0B_spec[j];
+      //   if ( ratio==0.00 ) {
+      //     phys->CdB[j]=100;
+      //   } else {
+      //     phys->CdB[j]=pow(log(ratio)/KAPPA_VK,-2);
+      //     if(phys->CdB[j]>100) { phys->CdB[j]=100; }
+      //   }
+      
+      // with correction, but not yet allowing for large z0B:
+      // h=grid->dzf[j][grid->Nke[j]-1];
+      // ratio=h/phys->z0B_spec[j];
+      // phys->CdB[j]=pow( KAPPA_VK
+      //                   /
+      //                   ( log(ratio) - 1 + phys->z0B[j]/h ),
+      //                   2);
+
+      // Allowing large z0B
+      // this may be negative:
+      ratio=(log(h/phys->z0B_spec[j]) - 1 + phys->z0B_spec[j]/h)/KAPPA_VK;
+      // so based on a max CdB=100, clamp ratio to be at least 0.1
+      phys->CdB[j]=pow( Max(0.1,ratio), -2 );
+      
       ASSERT_FINITE(phys->CdB[j]);
     }
   }
@@ -3167,13 +3183,14 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
       u_bed_mag=sqrt(u_bed_mag);
 
       // precalc layer thickness for bed stress calc
-      if (grid->Nke[j]-grid->etop[j]>1) {
-	dz_bed_fric=0.5*(  grid->dzz[nc1][grid->Nke[j]-1]
-			 + grid->dzz[nc2][grid->Nke[j]-1]);
-      } else {
-	dz_bed_fric=0.5*(  grid->dzz[nc1][grid->etop[j]]
-			   + grid->dzz[nc2][grid->etop[j]]);
-      }
+      // if (grid->Nke[j]-grid->etop[j]>1) {
+      //   dz_bed_fric=0.5*(  grid->dzz[nc1][grid->Nke[j]-1]
+      //   		 + grid->dzz[nc2][grid->Nke[j]-1]);
+      // } else {
+      //   dz_bed_fric=0.5*(  grid->dzz[nc1][grid->etop[j]]
+      //   		   + grid->dzz[nc2][grid->etop[j]]);
+      // }
+      dz_bed_fric=Max(DRYCELLHEIGHT,grid->dzf[j][grid->Nke[j]-1]);
       
       // add on explicit diffusion to RHS (utmp)
       if ( theta!=1 ) { // drag forced fully implicit above, so skip stanza below
