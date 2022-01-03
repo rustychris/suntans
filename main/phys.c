@@ -2931,20 +2931,14 @@ static void EddyViscosity(gridT *grid, physT *phys, propT *prop, REAL **wnew, MP
   switch(prop->turbmodel) {
   case 1:
     my25(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
-
-    // check that we get some nonzero l
-    // This is checking out okay...
-    for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
-      i=grid->cellp[iptr];
-      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-	if ( phys->lT[i][k] < 1e-11 ) {
-	  printf("[p=%d] turb l[i=%d][k=%d]=%f should be greater than %f\n",
-		 myproc,i,k,phys->lT[i][k],LBACKGROUND);
-	}
-      }
-    }
     break;
-  case 10:
+  case TURB_GEN:
+  case TURB_KEPS:
+  case TURB_KOMEGA:
+  case TURB_KKL_GLS:
+    gls(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
+    break;
+  case TURB_PARABOLIC:
     parabolic_viscosity(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
     break;
   }
