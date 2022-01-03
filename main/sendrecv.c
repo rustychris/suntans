@@ -817,7 +817,7 @@ static void SendRecvEdgeData3D(REAL **edgedata, gridT *grid, int myproc, MPI_Com
 void SyncBarrier(int tag,int myproc, MPI_Comm comm)
 {
   int buffer[1];
-  printf("[p=%d] SyncBarrier(tag=%d) ENTER\n",myproc,tag);
+  // printf("[p=%d] SyncBarrier(tag=%d) ENTER\n",myproc,tag);
   fflush(stdout);
   
   if(myproc==0) {
@@ -837,6 +837,6 @@ void SyncBarrier(int tag,int myproc, MPI_Comm comm)
   // might race ahead.
   MPI_Barrier(comm);
   
-  printf("[p=%d] SyncBarrier(tag=%d) EXIT\n",myproc,tag);
+  // printf("[p=%d] SyncBarrier(tag=%d) EXIT\n",myproc,tag);
   fflush(stdout);
 }

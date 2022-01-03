@@ -57,7 +57,7 @@ void ReadGrid(gridT **grid, int myproc, int numprocs, MPI_Comm comm)
 {
   int neigh, n, nf, np, ne, nc, Nkmax;
   int Np;
-  char str[BUFFERLENGTH], str2[BUFFERLENGTH];
+  char str[2*BUFFERLENGTH];
   FILE *ifile;
 
   ReadGridFileNames(myproc);
@@ -184,7 +184,7 @@ void ReadGrid(gridT **grid, int myproc, int numprocs, MPI_Comm comm)
 // RH: write out edge depths, either global or local grid
 void WriteEdgeDepths(gridT *grid,int myproc, grid_type_t grid_type) {
   int j;
-  char str[BUFFERLENGTH];
+  char str[2*BUFFERLENGTH];
   FILE *ofile;
 
   // If the file exists, read it.  No setting in suntans.dat
@@ -221,7 +221,7 @@ void WriteEdgeDepths(gridT *grid,int myproc, grid_type_t grid_type) {
 // get updated, while these edge depths will not.
 void InitializeEdgeDepths(gridT *grid,int myproc,MPI_Comm comm,grid_type_t grid_type) {
   int n,nc1,nc2;
-  char str[BUFFERLENGTH];
+  char str[2*BUFFERLENGTH];
   FILE *ifile;
   REAL temp;
 
@@ -314,7 +314,7 @@ void ReadGridFileNames(int myproc)
  */
 void ReadDepth(gridT *grid, int myproc) {
   int n;
-  char str[BUFFERLENGTH];
+  char str[2*BUFFERLENGTH];
   FILE *fid;
   sprintf(str,"%s-voro",INPUTDEPTHFILE);
 
@@ -380,7 +380,7 @@ void ReadMainGrid(gridT *grid, int myproc)
 void OutputGridData(gridT *maingrid, gridT *grid, int myproc, int numprocs)
 {
   int j, n, nf, neigh, Np=maingrid->Np, Nc=grid->Nc, Ne=grid->Ne;
-  char str[BUFFERLENGTH];
+  char str[2*BUFFERLENGTH];
   FILE *ofile;
 
   // Assume that the triangulation output uses the same as the original format, i.e.
