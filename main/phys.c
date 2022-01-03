@@ -37,7 +37,6 @@
 #include "sediments.h"
 #include "substepping.h"
 
-
 /*
  * Private Function declarations.
  *
@@ -794,13 +793,17 @@ void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
       // the log of this can end up zero or negative.
       // This way it is always greater than 1.
       // But the code below is missing the correction for log-profile within the cell
-      //   ratio=(0.5*grid->dzf[j][grid->Nke[j]-1] + phys->z0B_spec[j])/phys->z0B_spec[j];
-      //   if ( ratio==0.00 ) {
-      //     phys->CdB[j]=100;
-      //   } else {
-      //     phys->CdB[j]=pow(log(ratio)/KAPPA_VK,-2);
-      //     if(phys->CdB[j]>100) { phys->CdB[j]=100; }
-      //   }
+      // Efforts below to include a correction have been unstable, but it's unclear
+      // whether the instability is from the CdB calculated here, or a bug introduced
+      // somewhere in UPredictor. Did find a bug in the model setup, so maybe the correction
+      // is okay.
+      // ratio=(0.5*grid->dzf[j][grid->Nke[j]-1] + phys->z0B_spec[j])/phys->z0B_spec[j];
+      // if ( ratio==0.00 ) {
+      //   phys->CdB[j]=100;
+      // } else {
+      //   phys->CdB[j]=pow(log(ratio)/KAPPA_VK,-2);
+      //   if(phys->CdB[j]>100) { phys->CdB[j]=100; }
+      // }
       
       // with correction, but not yet allowing for large z0B:
       // h=grid->dzf[j][grid->Nke[j]-1];
@@ -811,6 +814,9 @@ void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
       //                   2);
 
       // Allowing large z0B
+      // 2021-12-17: has not been stable so far, but likely attributable
+      //  other bugs in model setup.
+      h=grid->dzf[j][grid->Nke[j]-1];
       // this may be negative:
       ratio=(log(h/phys->z0B_spec[j]) - 1 + phys->z0B_spec[j]/h)/KAPPA_VK;
       // so based on a max CdB=100, clamp ratio to be at least 0.1
@@ -1290,8 +1296,9 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
   }
 
   // RH: trying to narrow down how we're getting stuck between UpdateAverageScalars
-  // and WriteAverageNCmerge. 
-  SyncBarrier(1000,myproc,comm); // DBG
+  // and WriteAverageNCmerge.
+  // 2021-12-17: I think this is not needed any more -- schedule for deletion
+  // SyncBarrier(1000,myproc,comm); // DBG
   
   // Output the average arrays -- these are probably meaningless in this step, but
   // this keeps the average output and map output the same size.
@@ -1303,11 +1310,11 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
     // The average values themselves are meaningless, but this will populate
     // the instantaneous values
     UpdateAverageVariables(grid,average,phys,met,prop,comm,myproc);
-    SyncBarrier(1001,myproc,comm); // DBG
+    // SyncBarrier(1001,myproc,comm); // DBG
 
     UpdateAverageScalars(grid,average,phys,met,prop,comm,myproc);
     
-    SyncBarrier(1002,myproc,comm); // DBG
+    // SyncBarrier(1002,myproc,comm); // DBG
     
     if(prop->mergeArrays){
       WriteAverageNCmerge(prop,grid,average,phys,met,blowup,numprocs,comm,myproc);
@@ -2926,23 +2933,9 @@ static void CGSolveQ(REAL **q, REAL **src, REAL **c, gridT *grid, physT *phys, p
  */
 static void EddyViscosity(gridT *grid, physT *phys, propT *prop, REAL **wnew, MPI_Comm comm, int myproc)
 {
-  int iptr,i,k;
-  
   switch(prop->turbmodel) {
   case 1:
     my25(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
-
-    // check that we get some nonzero l
-    // This is checking out okay...
-    for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
-      i=grid->cellp[iptr];
-      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
-	if ( phys->lT[i][k] < 1e-11 ) {
-	  printf("[p=%d] turb l[i=%d][k=%d]=%f should be greater than %f\n",
-		 myproc,i,k,phys->lT[i][k],LBACKGROUND);
-	}
-      }
-    }
     break;
   case 10:
     parabolic_viscosity(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
@@ -3182,7 +3175,14 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
       // get magnitude
       u_bed_mag=sqrt(u_bed_mag);
 
-      // precalc layer thickness for bed stress calc
+      // precalc layer thickness for bed stress calc.
+      // Originally this used dzz averaged from cell neighbors.
+      // But SetDragCoefficients (for a while...) has used dzf, which is better
+      // for 'weir' edges.
+      // 2021-12-17: having trouble getting stable runs, so will revert this.
+      //             that turned out to be a separate bug. trying again here.
+      dz_bed_fric=Max(DRYCELLHEIGHT,grid->dzf[j][grid->Nke[j]-1]);
+      //
       // if (grid->Nke[j]-grid->etop[j]>1) {
       //   dz_bed_fric=0.5*(  grid->dzz[nc1][grid->Nke[j]-1]
       //   		 + grid->dzz[nc2][grid->Nke[j]-1]);
@@ -3190,7 +3190,6 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
       //   dz_bed_fric=0.5*(  grid->dzz[nc1][grid->etop[j]]
       //   		   + grid->dzz[nc2][grid->etop[j]]);
       // }
-      dz_bed_fric=Max(DRYCELLHEIGHT,grid->dzf[j][grid->Nke[j]-1]);
       
       // add on explicit diffusion to RHS (utmp)
       if ( theta!=1 ) { // drag forced fully implicit above, so skip stanza below
@@ -3279,13 +3278,13 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
                      dt*(1-theta)*(
                                    a[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2] -
                                    (a[grid->Nke[j]-1]
-                                    + phys->CdB[j]*fabs(phys->u[j][grid->Nke[j]-1])/dz_bed_fric)
+                                    + phys->CdB[j]*u_bed_mag/dz_bed_fric)
 				   * phys->u[j][grid->Nke[j]-1])
                      );
             }
 #endif
           }
-        } else {  // one layer for edge
+        } else{  // one layer for edge
           // drag on bottom boundary
           if(phys->CdB[j] == -1){ // no slip on bottom
             phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*
@@ -3293,8 +3292,13 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
                ((grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
                 (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])));
           } else { // standard drag law formation on bottom
-            phys->utmp[j][grid->etop[j]]-=dt*(1-theta)*
-              phys->CdB[j]/dz_bed_fric * u_bed_mag*phys->u[j][grid->etop[j]];
+	    // Seems like ths should be okay.. but still unstable.
+            // phys->utmp[j][grid->etop[j]]-=dt*(1-theta)*
+            //   phys->CdB[j]/dz_bed_fric * u_bed_mag*phys->u[j][grid->etop[j]];
+            phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*
+              (phys->CdB[j])/
+              (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
+              u_bed_mag*phys->u[j][grid->etop[j]];
           }
           // drag on top boundary
           if(phys->CdT[j] == -1){ // no slip on top
@@ -3409,7 +3413,11 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
              (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]]));
         }
         else{
-          b[grid->etop[j]]+=theta*dt*u_bed_mag*phys->CdB[j]/dz_bed_fric;
+	  // 2021-12-17: seems like this should be okay, but it isn't...
+          // b[grid->etop[j]]+=theta*dt*u_bed_mag*phys->CdB[j]/dz_bed_fric;
+          b[grid->etop[j]]+=2.0*theta*dt*u_bed_mag/
+            (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
+            (phys->CdB[j]);
         }
         // account for no slip conditions which are assumed if CdT = -1 
         if(phys->CdT[j] == -1){
