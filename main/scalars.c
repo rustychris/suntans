@@ -50,7 +50,7 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
   REAL smin, smax, div_local, div_da;
   int k1, k2, kmin, imin, kmax, imax, mincount, maxcount, allmincount, allmaxcount, flag;
 
-  prop->TVD = TVDscheme;
+  // used to set prop->TVD = TVDscheme here.
   // These are used mostly debugging to turn on/off vertical and horizontal TVD.
   prop->horiTVD = 0; // disable horizontal TVD
   prop->vertTVD = 1; // enable vertical TVD
@@ -117,9 +117,8 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
   }
 
   // Compute the scalar on the vertical faces (for horiz. advection)
-
-  if(prop->TVD && prop->horiTVD)
-    HorizontalFaceScalars(grid,phys,prop,scal,boundary_scal,prop->TVD,comm,myproc); 
+  if(TVDscheme && prop->horiTVD)
+    HorizontalFaceScalars(grid,phys,prop,scal,boundary_scal,TVDscheme,comm,myproc); 
 
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i = grid->cellp[iptr];
@@ -151,14 +150,14 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
     // RH: for shallow water columns revert to non-TVD.  TVD
     // doesn't make sense with fewer than 3 layers, and the code
     // is not safe for those layers, anyway.
-    if( !(prop->TVD && prop->vertTVD) || (grid->Nk[i]-ktop<3) ) {
+    if( !(TVDscheme && prop->vertTVD) || (grid->Nk[i]-ktop<3) ) {
       for(k=0;k<grid->Nk[i]+1;k++) {
         ap[k] = 0.5*(wnew[i][k]+fabs(wnew[i][k]));
         am[k] = 0.5*(wnew[i][k]-fabs(wnew[i][k]));
       }
     } else {// Compute the ap/am for TVD schemes
       GetApAm(ap,am,phys->wp,phys->wm,phys->Cp,phys->Cm,phys->rp,phys->rm,
-          wnew,grid->dzz,scal,i,grid->Nk[i],ktop,prop->dt,prop->TVD);
+          wnew,grid->dzz,scal,i,grid->Nk[i],ktop,prop->dt,TVDscheme);
     }
 
     for(k=ktop+1;k<grid->Nk[i];k++) {
@@ -264,14 +263,14 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
     // These are the advective components of the tridiagonal
     // that use the new velocity
     // RH: TVD no good with <3 layers (code is not safe for < 3 layers)
-    if( !(prop->TVD && prop->vertTVD) || (grid->Nk[i]-ktop<3) ) {
+    if( !(TVDscheme && prop->vertTVD) || (grid->Nk[i]-ktop<3) ) {
       for(k=0;k<grid->Nk[i]+1;k++) {
         ap[k] = 0.5*(phys->wtmp2[i][k]+fabs(phys->wtmp2[i][k]));
         am[k] = 0.5*(phys->wtmp2[i][k]-fabs(phys->wtmp2[i][k]));
       }
     } else { // Compute the ap/am for TVD schemes
       GetApAm(ap,am,phys->wp,phys->wm,phys->Cp,phys->Cm,phys->rp,phys->rm,
-          phys->wtmp2,grid->dzzold,phys->stmp,i,grid->Nk[i],ktop,prop->dt,prop->TVD);
+          phys->wtmp2,grid->dzzold,phys->stmp,i,grid->Nk[i],ktop,prop->dt,TVDscheme);
     }
         
     // Explicit advection and diffusion
@@ -407,7 +406,7 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
         // to be our own.
         for(k=0;k<grid->Nke[ne];k++) 
           temp[k]=phys->stmp[i][k];
-      } else if(!(prop->TVD && prop->horiTVD)) {
+      } else if(!(TVDscheme && prop->horiTVD)) {
         for(k=0;k<grid->Nke[ne];k++) 
           temp[k]=UpWind(phys->utmp2[ne][k],
               phys->stmp[nc1][k],
@@ -447,7 +446,6 @@ void UpdateScalars(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **sc
       }
     }
 #endif
-
 
     // Add on the volume correction if h was < -d
     /*

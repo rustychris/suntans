@@ -800,7 +800,7 @@ void SedimentVerticalVelocity(gridT *grid, physT *phys,int Nosize,int symbol, in
  */
 void OpenSediFiles(propT *prop, int myproc) {
   int i;
-  char str[BUFFERLENGTH], filename[BUFFERLENGTH];
+  char str[2*BUFFERLENGTH], filename[BUFFERLENGTH];
 
   sediments->SedimentFID=(FILE **)SunMalloc(sediments->Nsize*sizeof(FILE *), "OpenSediFiles"); 
   for(i=0;i<sediments->Nsize;i++){

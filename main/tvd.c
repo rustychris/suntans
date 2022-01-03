@@ -156,7 +156,7 @@ static REAL Psi(REAL r, int TVD){
 /*
  * Function: GetApAm
  * Usage:  GetApAm(ap,am,phys->wp,phys->wm,phys->Cp,phys->Cm,phys->rp,phys->rm,
- *	           phys->w,grid->dzz,scal,i,grid->Nk[i],ktop,prop->dt,prop->TVD);
+ *	           phys->w,grid->dzz,scal,i,grid->Nk[i],ktop,prop->dt,prop->TVD{salt,temp,...});
  * ------------------------------------------------------------------------------
  * Calculate the fluxes for vertical advection using the TVD schemes.
  *

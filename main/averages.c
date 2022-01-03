@@ -289,70 +289,44 @@ void UpdateAverageScalars(gridT *grid, averageT *average, physT *phys, metT *met
   /*
    * Compute salinity and temperature fluxes using TVD scheme
    */
-  if(prop->TVD){
+  if( prop->TVDsalt && (prop->beta>0) ) {
     //Salt
-    if(prop->beta>0){
-      // Compute the scalar on the vertical faces (for horiz. advection)
-      HorizontalFaceScalars(grid,phys,prop,phys->s,phys->boundary_s,prop->TVDsalt,comm,myproc); 
-      for(jptr=grid->edgedist[0];jptr<grid->edgedist[4];jptr++) {
-        j = grid->edgep[jptr]; 
-        for(k=grid->etop[j];k<grid->Nke[j];k++){
-          //See equation 85 in SUNTANS paper
-          flx = (theta*phys->u[j][k] + (1.0-theta)*phys->utmp2[j][k])*grid->dzf[j][k]*grid->df[j]; 
-          //if(phys->u[j][k]>0)
-          if(phys->utmp2[j][k]>0)
-            average->s_F[j][k]+=phys->SfHp[j][k] * flx * V0;
-          else
-            average->s_F[j][k]+=phys->SfHm[j][k] * flx * V0;
-        }
+    // Compute the scalar on the vertical faces (for horiz. advection)
+    HorizontalFaceScalars(grid,phys,prop,phys->s,phys->boundary_s,prop->TVDsalt,comm,myproc); 
+    for(jptr=grid->edgedist[0];jptr<grid->edgedist[4];jptr++) {
+      j = grid->edgep[jptr]; 
+      for(k=grid->etop[j];k<grid->Nke[j];k++){
+	//See equation 85 in SUNTANS paper
+	flx = (theta*phys->u[j][k] + (1.0-theta)*phys->utmp2[j][k])*grid->dzf[j][k]*grid->df[j]; 
+	//if(phys->u[j][k]>0)
+	if(phys->utmp2[j][k]>0)
+	  average->s_F[j][k]+=phys->SfHp[j][k] * flx * V0;
+	else
+	  average->s_F[j][k]+=phys->SfHm[j][k] * flx * V0;
       }
     }
+  }
 
+  if( prop->TVDtemp && (prop->gamma>0) ) {
     //Temperature
-    if(prop->gamma>0){
-      HorizontalFaceScalars(grid,phys,prop,phys->T,phys->boundary_T,prop->TVDtemp,comm,myproc); 
-      for(jptr=grid->edgedist[0];jptr<grid->edgedist[4];jptr++) {
-        j = grid->edgep[jptr]; 
-        for(k=grid->etop[j];k<grid->Nke[j];k++){
-          flx = (theta*phys->u[j][k] + (1.0-theta)*phys->utmp2[j][k])*grid->dzf[j][k]*grid->df[j]; 
-          //if(phys->u[j][k]>0)
-          if(phys->utmp2[j][k]>0)
-            average->T_F[j][k]+=phys->SfHp[j][k] * flx * V0;
-          else
-            average->T_F[j][k]+=phys->SfHm[j][k] * flx * V0;
-        }
+    HorizontalFaceScalars(grid,phys,prop,phys->T,phys->boundary_T,prop->TVDtemp,comm,myproc); 
+    for(jptr=grid->edgedist[0];jptr<grid->edgedist[4];jptr++) {
+      j = grid->edgep[jptr]; 
+      for(k=grid->etop[j];k<grid->Nke[j];k++){
+	flx = (theta*phys->u[j][k] + (1.0-theta)*phys->utmp2[j][k])*grid->dzf[j][k]*grid->df[j]; 
+	//if(phys->u[j][k]>0)
+	if(phys->utmp2[j][k]>0)
+	  average->T_F[j][k]+=phys->SfHp[j][k] * flx * V0;
+	else
+	  average->T_F[j][k]+=phys->SfHm[j][k] * flx * V0;
       }
     }
   } else { // No TVD
     // FIX
-  }//End flux calculation
- /*
-   * Compute salinity and temperature fluxes using central-difference
-  */
-
-    //Salt and temp
-/*
-//      for(j=0;j<Ne;j++){
-//	for(k=0;k<grid->Nke[j];k++) {
-    for(jptr=grid->edgedist[0];jptr<grid->edgedist[1];jptr++) {
-       j = grid->edgep[jptr]; 
-       for(k=grid->etop[j];k<grid->Nke[j];k++){
-
-	  flx = phys->u[j][k]*grid->dzf[j][k]*grid->df[j]; 
-
-	  nc1 = grid->grad[2*j];
-	  nc2 = grid->grad[2*j+1];
-	  if(nc1==-1) nc1=nc2;
-	  if(nc2==-1) nc2=nc1;
-
-	  average->s_F[j][k]+= 0.5*(phys->s[nc1][k]+phys->s[nc2][k])*flx;
-	  average->T_F[j][k]+= 0.5*(phys->T[nc1][k]+phys->T[nc2][k])*flx;
-	}
-      }
-*/
-
-
+  }
+  //End flux calculation
 }
+
 /*
  * Function: ComputeAverageVariables() 
  * ---------------------------------

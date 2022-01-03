@@ -122,7 +122,7 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
       CdAvgB+=phys->CdB[ne];
       tauAvgT+=fabs(phys->tau_T[ne]);
 
-      // Obviosuly not correct, as it's missing tangential
+      // Obviously not correct, as it's missing tangential
       // velocity on the edges.  but should at least show some
       // improvement over existing code if divets and lumps are
       // actually the cause of turb noise
@@ -255,7 +255,7 @@ void my25(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l
       if(q[i][k]<QBACKGROUND)
         q[i][k]=QBACKGROUND;
 
-      ASSERT_FINITE(q[i][k]);// fails
+      ASSERT_FINITE(q[i][k]);
       ASSERT_FINITE(l[i][k]);
     }
   }

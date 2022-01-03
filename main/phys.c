@@ -793,13 +793,29 @@ void SetDragCoefficients(gridT *grid, physT *phys, propT *prop) {
       // ratio=0.5*grid->dzf[j][grid->Nke[j]-1]/phys->z0B_spec[j];
       // the log of this can end up zero or negative.
       // This way it is always greater than 1.
-      ratio=(0.5*grid->dzf[j][grid->Nke[j]-1] + phys->z0B_spec[j])/phys->z0B_spec[j];
-      if ( ratio==0.00 ) {
-        phys->CdB[j]=100;
-      } else {
-        phys->CdB[j]=pow(log(ratio)/KAPPA_VK,-2);
-        if(phys->CdB[j]>100) { phys->CdB[j]=100; }
-      }
+      // But the code below is missing the correction for log-profile within the cell
+      //   ratio=(0.5*grid->dzf[j][grid->Nke[j]-1] + phys->z0B_spec[j])/phys->z0B_spec[j];
+      //   if ( ratio==0.00 ) {
+      //     phys->CdB[j]=100;
+      //   } else {
+      //     phys->CdB[j]=pow(log(ratio)/KAPPA_VK,-2);
+      //     if(phys->CdB[j]>100) { phys->CdB[j]=100; }
+      //   }
+      
+      // with correction, but not yet allowing for large z0B:
+      // h=grid->dzf[j][grid->Nke[j]-1];
+      // ratio=h/phys->z0B_spec[j];
+      // phys->CdB[j]=pow( KAPPA_VK
+      //                   /
+      //                   ( log(ratio) - 1 + phys->z0B[j]/h ),
+      //                   2);
+
+      // Allowing large z0B
+      // this may be negative:
+      ratio=(log(h/phys->z0B_spec[j]) - 1 + phys->z0B_spec[j]/h)/KAPPA_VK;
+      // so based on a max CdB=100, clamp ratio to be at least 0.1
+      phys->CdB[j]=pow( Max(0.1,ratio), -2 );
+      
       ASSERT_FINITE(phys->CdB[j]);
     }
   }
@@ -1176,6 +1192,8 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
     InitBoundaryData(prop, grid, myproc, comm);
   }
 
+  printf("[p=%d] Initializing boundary info\n",myproc);
+
   // get the boundary velocities (boundaries.c)
   BoundaryVelocities(grid,phys,prop,myproc, comm); 
   // get the openboundary flux (boundaries.c)
@@ -1209,6 +1227,8 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
 
   // Initialise the meteorological forcing input fields
   if(prop->metmodel>0){
+    printf("[p=%d] Initializing met forcing\n",myproc);
+    
     if (prop->gamma==0.0){
       if(myproc==0) printf("Warning gamma must be > 1 for heat flux model.\n");
     }else{
@@ -1240,6 +1260,7 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
 
   // Initialise the average arrays and netcdf file
   if(prop->calcaverage>0){
+    printf("[p=%d] Initializing averaging\n",myproc);
     AllocateAverageVariables(grid,&average,prop);
     ZeroAverageVariables(grid,average,prop);
     if(prop->mergeArrays==0)
@@ -1267,15 +1288,26 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       WriteOutputNC(prop, grid, phys, met, blowup, myproc);
     }
   }
+
+  // RH: trying to narrow down how we're getting stuck between UpdateAverageScalars
+  // and WriteAverageNCmerge. 
+  SyncBarrier(1000,myproc,comm); // DBG
+  
   // Output the average arrays -- these are probably meaningless in this step, but
   // this keeps the average output and map output the same size.
   // it also means that a specific index of average output i is integrating over
   // the time step [i-1,i].
   if(prop->calcaverage){
+    printf("[p=%d] Output initial averaged values\n",myproc);
+
     // The average values themselves are meaningless, but this will populate
     // the instantaneous values
     UpdateAverageVariables(grid,average,phys,met,prop,comm,myproc);
+    SyncBarrier(1001,myproc,comm); // DBG
+
     UpdateAverageScalars(grid,average,phys,met,prop,comm,myproc);
+    
+    SyncBarrier(1002,myproc,comm); // DBG
     
     if(prop->mergeArrays){
       WriteAverageNCmerge(prop,grid,average,phys,met,blowup,numprocs,comm,myproc);
@@ -1283,7 +1315,7 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
       WriteAverageNC(prop,grid,average,phys,met,blowup,comm,myproc);
     }
   }
-  
+
   // main time loop
   for(n=prop->nstart+1;n<=prop->nsteps+prop->nstart;n++) {
 
@@ -2894,12 +2926,27 @@ static void CGSolveQ(REAL **q, REAL **src, REAL **c, gridT *grid, physT *phys, p
  */
 static void EddyViscosity(gridT *grid, physT *phys, propT *prop, REAL **wnew, MPI_Comm comm, int myproc)
 {
+  int iptr,i,k;
+  
   switch(prop->turbmodel) {
   case 1:
     my25(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
+
+    // check that we get some nonzero l
+    // This is checking out okay...
+    for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
+      i=grid->cellp[iptr];
+      for(k=grid->ctop[i];k<grid->Nk[i];k++) {
+	if ( phys->lT[i][k] < 1e-11 ) {
+	  printf("[p=%d] turb l[i=%d][k=%d]=%f should be greater than %f\n",
+		 myproc,i,k,phys->lT[i][k],LBACKGROUND);
+	}
+      }
+    }
     break;
   case 10:
     parabolic_viscosity(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
+    break;
   }
 }
 
@@ -2923,6 +2970,7 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
   REAL sum, dt=prop->dt, theta=prop->theta, h0, boundary_flag;
   REAL *a, *b, *c, *d, *e1, **E, *a0, *b0, *c0, *d0, theta0, alpha;
   REAL u_bed_mag; // velocity scale to linearize bed drag
+  REAL dz_bed_fric; // the dz used in friction calculations at the bed
 
   a = phys->a;
   b = phys->b;
@@ -3127,13 +3175,22 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
       if ( grid->ctop[nc2]<=k ) {
         u_bed_mag+=phys->uc[nc2][k]*grid->n2[j] - phys->vc[nc2][k]*grid->n1[j];
       }
-      // average 
+      // square and average 
       u_bed_mag *= u_bed_mag*0.25;
       // add normal comp.
       u_bed_mag += pow(phys->u[j][k],2);
       // get magnitude
       u_bed_mag=sqrt(u_bed_mag);
 
+      // precalc layer thickness for bed stress calc
+      // if (grid->Nke[j]-grid->etop[j]>1) {
+      //   dz_bed_fric=0.5*(  grid->dzz[nc1][grid->Nke[j]-1]
+      //   		 + grid->dzz[nc2][grid->Nke[j]-1]);
+      // } else {
+      //   dz_bed_fric=0.5*(  grid->dzz[nc1][grid->etop[j]]
+      //   		   + grid->dzz[nc2][grid->etop[j]]);
+      // }
+      dz_bed_fric=Max(DRYCELLHEIGHT,grid->dzf[j][grid->Nke[j]-1]);
       
       // add on explicit diffusion to RHS (utmp)
       if ( theta!=1 ) { // drag forced fully implicit above, so skip stanza below
@@ -3201,16 +3258,18 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
                                                          (a[grid->Nke[j]-1]+b[grid->Nke[j]-1])*phys->u[j][grid->Nke[j]-1]+
                                                          b[grid->Nke[j]-1]*-phys->u[j][grid->Nke[j]-1]);
             
-          } else { // standard drag law code                        
+          } else { // standard drag law code
+	    // RH: CdB is being calculated based on dzf, but here we use average of dzz
+	    // for flat bed, no difference. My old friction code used Max(DZMIN,dzf).
+	    // Try that, as it seems less likely to create artifacts
             phys->utmp[j][grid->Nke[j]-1]+=dt*(1-theta)*
               (
                a[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2] -
                (a[grid->Nke[j]-1] 
-                + 2.0*phys->CdB[j]*u_bed_mag/
-                (grid->dzz[nc1][grid->Nke[j]-1]+
-                 grid->dzz[nc2][grid->Nke[j]-1]))*
+                + phys->CdB[j]*u_bed_mag/dz_bed_fric)*
                phys->u[j][grid->Nke[j]-1]
                );
+	    
 
 #if defined(DBG_PROC) && defined(DBG_EDGE)
             if(myproc==DBG_PROC && j==DBG_EDGE) {
@@ -3220,15 +3279,13 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
                      dt*(1-theta)*(
                                    a[grid->Nke[j]-1]*phys->u[j][grid->Nke[j]-2] -
                                    (a[grid->Nke[j]-1]
-                                    + 2.0*phys->CdB[j]*fabs(phys->u[j][grid->Nke[j]-1])/
-                                    (grid->dzz[nc1][grid->Nke[j]-1]+
-                                     grid->dzz[nc2][grid->Nke[j]-1]))*
-                                   phys->u[j][grid->Nke[j]-1])
+                                    + phys->CdB[j]*fabs(phys->u[j][grid->Nke[j]-1])/dz_bed_fric)
+				   * phys->u[j][grid->Nke[j]-1])
                      );
             }
 #endif
           }
-        } else{  // one layer for edge
+        } else {  // one layer for edge
           // drag on bottom boundary
           if(phys->CdB[j] == -1){ // no slip on bottom
             phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*
@@ -3236,10 +3293,8 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
                ((grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
                 (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])));
           } else { // standard drag law formation on bottom
-            phys->utmp[j][grid->etop[j]]-=2.0*dt*(1-theta)*
-              (phys->CdB[j])/
-              (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
-              u_bed_mag*phys->u[j][grid->etop[j]];
+            phys->utmp[j][grid->etop[j]]-=dt*(1-theta)*
+              phys->CdB[j]/dz_bed_fric * u_bed_mag*phys->u[j][grid->etop[j]];
           }
           // drag on top boundary
           if(phys->CdT[j] == -1){ // no slip on top
@@ -3335,9 +3390,7 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
         }
         else{ // standard drag law
           b[grid->Nke[j]-1]=1.0+theta*dt*(a[grid->Nke[j]-1]+
-              2.0*phys->CdB[j]*u_bed_mag/
-              (grid->dzz[nc1][grid->Nke[j]-1]+
-               grid->dzz[nc2][grid->Nke[j]-1]));
+              phys->CdB[j]*u_bed_mag/dz_bed_fric);
         }
         a[grid->Nke[j]-1]=-theta*dt*a[grid->Nke[j]-1];
 
@@ -3356,9 +3409,7 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
              (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]]));
         }
         else{
-          b[grid->etop[j]]+=2.0*theta*dt*u_bed_mag/
-            (grid->dzz[nc1][grid->etop[j]]+grid->dzz[nc2][grid->etop[j]])*
-            (phys->CdB[j]);
+          b[grid->etop[j]]+=theta*dt*u_bed_mag*phys->CdB[j]/dz_bed_fric;
         }
         // account for no slip conditions which are assumed if CdT = -1 
         if(phys->CdT[j] == -1){

@@ -113,7 +113,7 @@ void Write3DData(REAL **array, REAL *temp_array, int merge, FILE *fid, char *err
  */
 void OpenFiles(propT *prop, int myproc)
 {
-  char str[BUFFERLENGTH], filename[BUFFERLENGTH];
+  char str[2*BUFFERLENGTH], filename[BUFFERLENGTH];
 
   if(prop->readSalinity && prop->readinitialnc == 0) {
     MPI_GetFile(filename,DATAFILE,"InitSalinityFile","OpenFiles",myproc);
@@ -257,7 +257,7 @@ void OpenFiles(propT *prop, int myproc)
 void OutputPhysicalVariables(gridT *grid, physT *phys, propT *prop,int myproc, int numprocs, int blowup, MPI_Comm comm)
 {
   int i, j, jptr, k, nwritten, arraySize, writeProc;
-  char str[BUFFERLENGTH], filename[BUFFERLENGTH];
+  char str[2*BUFFERLENGTH], filename[BUFFERLENGTH];
   REAL *tmp = (REAL *)SunMalloc(grid->Ne*sizeof(REAL),"OutputData"), 
     *array2DPointer, **array3DPointer;
 

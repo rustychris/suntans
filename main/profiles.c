@@ -132,7 +132,7 @@ void InterpData(gridT *grid, physT *phys, propT *prop, MPI_Comm comm, int numpro
 void InitializeOutputIndices(gridT *grid, MPI_Comm comm, int numprocs, int myproc) {
   int i, ni, Ndata, Np, *cells, nf, total2dtemp, total3dtemp, proc, tempSum;
   REAL x, y, *xp, *yp;
-  char filename[BUFFERLENGTH], str[BUFFERLENGTH];
+  char filename[2*BUFFERLENGTH], str[BUFFERLENGTH];
   FILE *ifid;
 
   // Get ntoutProfs, which is the frequency that output profiles is desired
@@ -332,7 +332,7 @@ static int InPolygon(REAL x, REAL y, REAL *xg, REAL *yg, int N) {
  */
 static void OpenDataFiles(int myproc) {
   int status, nosize;
-  char str[BUFFERLENGTH], filename[BUFFERLENGTH];
+  char str[2*BUFFERLENGTH], filename[BUFFERLENGTH];
 
   if(strlen(ProfileVariables)>0) {
     if(ContainsCharacter(ProfileVariables,'h')) {

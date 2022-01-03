@@ -18,7 +18,7 @@ void ParseFlags(int argc, char *argv[], int myproc)
 {
   int i, j, js, done=0, status;
   struct stat filestat;
-  char str[BUFFERLENGTH], val[BUFFERLENGTH];
+  char str[3*BUFFERLENGTH], val[BUFFERLENGTH];
   TRIANGULATE=0;
   GRID=0;
   SOLVE=0;

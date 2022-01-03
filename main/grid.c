@@ -435,7 +435,7 @@ void GetDepth(gridT *grid, int myproc, int numprocs, MPI_Comm comm)
 {
   int n, maxgridweight=1000, IntDepth, Nkmax, stairstep, fixdzz, kount=0;
   REAL mindepth, maxdepth, maxdepth0, minimum_depth, *dz;
-  char str[BUFFERLENGTH];
+  char str[2*BUFFERLENGTH];
   FILE *ofile;
 
   Nkmax = MPI_GetValue(DATAFILE,"Nkmax","GetDepth",myproc);

@@ -59,7 +59,7 @@ static void ReadTidalArrays(FILE *ifid, char *istr, int N);
  */
 void SetTideComponents(gridT *grid, int myproc) {
   int i, j, iptr, jptr, numboundaryedges, read_count;
-  char istr[BUFFERLENGTH], ostr[BUFFERLENGTH], filename[BUFFERLENGTH];
+  char istr[2*BUFFERLENGTH], ostr[2*BUFFERLENGTH], filename[BUFFERLENGTH];
   FILE *ifid, *ofid;
 
   MPI_GetFile(filename,DATAFILE,"TideInput","SetTideComponents",myproc);
