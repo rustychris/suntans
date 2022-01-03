@@ -8,7 +8,7 @@
 #include "mynetcdf.h"
 #include "merge.h"
 #include "sediments.h"
-#include "turbulence.h" // temporary for debugging
+#include "turbulence.h" 
 
 /***********************************************
 * Private functions
@@ -42,68 +42,7 @@ static void nc_write_2Dedge_merge(int ncid, int tstep, REAL *array, propT *prop,
 
 static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, metT *met, int myproc);
 
-static void cell_centered_bed_stress_interp(physT *phys, gridT *grid,REAL *taux,REAL *tauy);
 static void cell_centered_bed_stress_center(physT *phys, gridT *grid,REAL *taux,REAL *tauy);
-
-
-/*
- * Compute the cell-centered components of the bed stress, following
- * same method as computing cell-centered velocity
- *
- * u = 1/Area * Sum_{faces} u_{face} normal_{face} df_{face}*d_{ef,face}
- */
-static void cell_centered_bed_stress_interp(physT *phys, gridT *grid, REAL *taux, REAL *tauy) {
-  /*
-   * taux: destination for x component of cell-centered be stress [Nc]
-   * tauy: destination for y component of cell-centered be stress [Nc]
-   * calculates tau_B, mimicking phys.c, since this is typically not calculated.
-   */
-  int k, n, j, nf, i, iptr, nc1,nc2;
-  REAL sum, u_bed_mag, tau_j;
-
-  for(i=0;i<grid->Nc;i++) { taux[i]=tauy[i]=0.0; }
-  for(j=0;j<grid->Ne;j++) { phys->tau_B[j]=0.0; }
-  
-  // for each computational cell (non-stage defined)
-  for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
-    n=grid->cellp[iptr];
-
-    // over each face
-    for(nf=0;nf<grid->nfaces[n];nf++) {
-      j = grid->face[n*grid->maxfaces+nf];
-
-      // Replicate phys.c calculation of bed velocity
-      u_bed_mag=0;
-      k=grid->Nke[j]-1;
-      nc1 = grid->grad[2*j];
-      nc2 = grid->grad[2*j+1];
-
-      if(nc1==-1) nc1=nc2;
-      if(nc2==-1) nc2=nc1;
-
-      // first get tangential velocity in u_bed_mag
-      if ( grid->ctop[nc1]<=k ) {
-        u_bed_mag+=phys->uc[nc1][k]*grid->n2[j] - phys->vc[nc1][k]*grid->n1[j];
-      }
-      if ( grid->ctop[nc2]<=k ) {
-        u_bed_mag+=phys->uc[nc2][k]*grid->n2[j] - phys->vc[nc2][k]*grid->n1[j];
-      }
-      // square and average 
-      u_bed_mag *= u_bed_mag*0.25;
-      // add normal comp.
-      u_bed_mag += pow(phys->u[j][k],2);
-      // get as magnitude
-      u_bed_mag = sqrt(u_bed_mag);
-      // edge-normal quadratic drag law
-      tau_j=phys->CdB[j]*u_bed_mag * phys->u[j][k];
-      phys->tau_B[j]=tau_j;
-      taux[n]+=tau_j*grid->n1[j]*grid->def[n*grid->maxfaces+nf]*grid->df[j];
-      tauy[n]+=tau_j*grid->n2[j]*grid->def[n*grid->maxfaces+nf]*grid->df[j];
-    }
-    taux[n]/=grid->Ac[n];
-    tauy[n]/=grid->Ac[n];
-  }
-}
 
 /* Compute cell-centered components of bed stress in the same manner as sediments.c,
    using cell-centered velocity.

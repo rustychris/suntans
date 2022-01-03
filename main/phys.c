@@ -2937,7 +2937,13 @@ static void EddyViscosity(gridT *grid, physT *phys, propT *prop, REAL **wnew, MP
   case 1:
     my25(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
     break;
-  case 10:
+  case TURB_GEN:
+  case TURB_KEPS:
+  case TURB_KOMEGA:
+  case TURB_KKL_GLS:
+    gls(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
+    break;
+  case TURB_PARABOLIC:
     parabolic_viscosity(grid,phys,prop,wnew,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv,comm,myproc);
     break;
   }
