@@ -35,4 +35,8 @@ void gls(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l,
 
 void parabolic_viscosity(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l,
                          REAL **Cn_q, REAL **Cn_l, REAL **nuT, REAL **kappaT, MPI_Comm comm, int myproc);
+
+void cell_centered_bed_stress_interp(physT *phys, gridT *grid, REAL *taux, REAL *tauy);
+void edge_centered_bed_stress(physT *phys, gridT *grid, REAL *tau);
+
 #endif

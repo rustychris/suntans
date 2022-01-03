@@ -385,9 +385,9 @@ static void gls_StabilityFunctions(REAL *Sm, REAL *Sh, REAL Gh, REAL Gm);
 
 /*
  * Function: gls
- * Usage: gls(grid,phys,prop,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv);
+ * Usage: gls(grid,phys,prop,w,phys->qT,phys->lT,phys->Cn_q,phys->Cn_l,phys->nu_tv,phys->kappa_tv);
  * -----------------------------------------------------------------------------------------------
- * Computes the eddy viscosity and scalar diffusivity via the MY25 closure.  Advection of the turbulent
+ * Computes the eddy viscosity and scalar diffusivity via GLS closure.  Advection of the turbulent
  * quantities q^2 and q^2l is included with the use of UpdateScalars
  *
  */
@@ -417,6 +417,8 @@ void gls(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l,
   const REAL Ghmin = -0.28;  //-0.2809;
   const REAL Ghcrit = 0.03;  //0.02;
 
+  edge_centered_bed_stress(phys,grid,phys->tau_B);
+  
   switch (prop->turbmodel) {
     /* k-kl */
   case TURB_KKL_GLS: // specifically select gls implementation of my25
@@ -517,19 +519,19 @@ void gls(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l,
       tauAvgT = 0.0;
       tauBx = tauBy = 0.0;
       
-      for(nf=0;nf<NFACES;nf++) {
-        ne=grid->face[i*NFACES+nf];
-        CdAvgT += phys->CdT[ne]/3;
-        CdAvgB += phys->CdB[ne]/3;
+      for(nf=0;nf<grid->nfaces[i];nf++) {
+        ne=grid->face[i*grid->maxfaces+nf];
+        CdAvgT += phys->CdT[ne]/grid->nfaces[i];
+        CdAvgB += phys->CdB[ne]/grid->nfaces[i];
 #ifdef WIND_STRESS_IMPLICIT
         if( grid->etop[ne] < grid->Nke[ne] )
-          tauAvgT+=fabs( phys->R_T[ne] * (phys->u_wind[ne] - phys->u[ne][grid->etop[ne]]) ) / 3.0;
+          tauAvgT+=fabs( phys->R_T[ne] * (phys->u_wind[ne] - phys->u[ne][grid->etop[ne]]) ) / grid->nfaces[i];
 #else
-        tauAvgT+=fabs(phys->tau_T[ne])/3.0;
+        tauAvgT+=fabs(phys->tau_T[ne])/grid->nfaces[i];
 #endif
         // tauB[ne] is a signed, face-normal stress from each edge.
-        tauBx += grid->n1[ne] * phys->tau_B[ne] * grid->def[i*NFACES+nf]* grid->df[ne];
-        tauBy += grid->n2[ne] * phys->tau_B[ne] * grid->def[i*NFACES+nf]* grid->df[ne];
+        tauBx += grid->n1[ne] * phys->tau_B[ne] * grid->def[i*grid->maxfaces+nf]* grid->df[ne];
+        tauBy += grid->n2[ne] * phys->tau_B[ne] * grid->def[i*grid->maxfaces+nf]* grid->df[ne];
       }
       tauBx /= grid->Ac[i];
       tauBy /= grid->Ac[i];
@@ -597,7 +599,7 @@ void gls(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l,
       // wtmp will store src2, the production for k, which is the (Ps+Pbplus) term
       for(k=grid->ctop[i];k<grid->Nk[i];k++) {
         Ps = nuT[i][k]*(pow(0.5*(dudz[k]+dudz[k+1]),2)+pow(0.5*(dvdz[k]+dvdz[k+1]),2));  // use viscosity, minimum already set
-        Pb = GRAV*kappaT[i][k]*0.5*(drdz[k]+drdz[k+1]); // use mass diffusivity, minimum already set
+        Pb = prop->grav*kappaT[i][k]*0.5*(drdz[k]+drdz[k+1]); // use mass diffusivity, minimum already set
         Diss = Max(eps_min, pow(cm0,3)*pow(q[i][k],1.5)/l[i][k]);
         
         // store these values in temporary variables for the lengthscale equation
@@ -645,7 +647,7 @@ void gls(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l,
   // note last argument: no_lateral=1 disables lateral advection of turbulent quantities.
   UpdateScalars(grid,phys,prop,wnew,
                 q,phys->boundary_tmp,phys->Cn_q,0.0,0.0,kappaT,thetaQ,phys->uold,
-                phys->wtmp,phys->htmp,phys->hold,0,0, comm, myproc, prop->TVDturb, HOR_ADV_TURBULENCE);
+                phys->wtmp,phys->htmp,phys->hold,0,0, comm, myproc, 0, prop->TVDturb, HOR_ADV_TURBULENCE);
   
   
   /********* solve the GLS equation *********/
@@ -657,19 +659,19 @@ void gls(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l,
       tauAvgT=0.0;
       tauBx = tauBy = 0.0;
       
-      for(nf=0;nf<NFACES;nf++) {
-        ne=grid->face[i*NFACES+nf];
-        CdAvgT+=phys->CdT[ne]/3;
-        CdAvgB+=phys->CdB[ne]/3;
+      for(nf=0;nf<grid->nfaces[i];nf++) {
+        ne=grid->face[i*grid->maxfaces+nf];
+        CdAvgT+=phys->CdT[ne]/grid->nfaces[i];
+        CdAvgB+=phys->CdB[ne]/grid->nfaces[i];
 #ifdef WIND_STRESS_IMPLICIT
         if( grid->etop[ne] < grid->Nke[ne] )
-          tauAvgT+=fabs( phys->R_T[ne] * (phys->u_wind[ne] - phys->u[ne][grid->etop[ne]]) ) / 3.0;
+          tauAvgT+=fabs( phys->R_T[ne] * (phys->u_wind[ne] - phys->u[ne][grid->etop[ne]]) ) / grid->nfaces[i];
 #else
-        tauAvgT+=fabs(phys->tau_T[ne])/3.0;
+        tauAvgT+=fabs(phys->tau_T[ne])/grid->nfaces[i];
 #endif
         // tauB[ne] is a signed, face-normal stress from each edge.
-        tauBx += grid->n1[ne] * phys->tau_B[ne] * grid->def[i*NFACES+nf]* grid->df[ne];
-        tauBy += grid->n2[ne] * phys->tau_B[ne] * grid->def[i*NFACES+nf]* grid->df[ne];
+        tauBx += grid->n1[ne] * phys->tau_B[ne] * grid->def[i*grid->maxfaces+nf]* grid->df[ne];
+        tauBy += grid->n2[ne] * phys->tau_B[ne] * grid->def[i*grid->maxfaces+nf]* grid->df[ne];
       }
       // tauAvgT=fabs(prop->tau_T); // bing, for uniform windstress,this won't not affected by the normals
       tauBx /= grid->Ac[i];
@@ -748,7 +750,7 @@ void gls(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l,
   // note last argument: no_lateral=1, disables lateral advection of turbulent quantities.
   UpdateScalars(grid,phys,prop,wnew,
                 l,phys->boundary_tmp,phys->Cn_l,0.0,0.0,kappaT,thetaQ,phys->uold,phys->wtmp,
-                phys->htmp,phys->hold,0,0, comm, myproc, prop->TVDturb, HOR_ADV_TURBULENCE);
+                phys->htmp,phys->hold,0,0, comm, myproc, 0, prop->TVDturb, HOR_ADV_TURBULENCE);
   
   /********* set the limits for psi and k and extract q and l *********/
   for(i=0;i<grid->Nc;i++) {
@@ -789,7 +791,7 @@ void gls(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l,
     // compute NN=N^2 for the use in lengthscale limit and stability functions
     for(k=grid->ctop[i]+1;k<grid->Nk[i];k++) {
       //this value is at the top face of layer k
-      NN[k]=-2.0*GRAV*prop->beta*(phys->s[i][k-1]-phys->s[i][k])/(grid->dzz[i][k-1]+grid->dzz[i][k]);
+      NN[k]=-2.0*prop->grav*prop->beta*(phys->s[i][k-1]-phys->s[i][k])/(grid->dzz[i][k-1]+grid->dzz[i][k]);
       if(NN[k]<0) NN[k]=0;
     }
     NN[grid->Nk[i]] = NN[grid->Nk[i]-1];
@@ -904,4 +906,72 @@ static void gls_StabilityFunctions(REAL *Sm, REAL *Sh, REAL Gh, REAL Gm) {
       *Sh =  1/sqrt(2.)*pow(cmu0,-3)*(0.1120+0.004519*Gh+0.00088*Gm)/
       (1+0.2555*Gh+0.02872*Gm+0.008677*Gh*Gh+0.005222*Gh*Gm-0.0000337*Gm*Gm);
   */
+}
+
+
+/*
+ * Compute the cell-centered components of the bed stress, following
+ * same method as computing cell-centered velocity
+ *
+ * u = 1/Area * Sum_{faces} u_{face} normal_{face} df_{face}*d_{ef,face}
+ */
+void cell_centered_bed_stress_interp(physT *phys, gridT *grid, REAL *taux, REAL *tauy) {
+  /*
+   * taux: destination for x component of cell-centered be stress [Nc]
+   * tauy: destination for y component of cell-centered be stress [Nc]
+   * calculates tau_B, mimicking phys.c, since this is typically not calculated.
+   */
+  int k, n, j, nf, i, iptr, nc1,nc2;
+  REAL sum, u_bed_mag, tau_j;
+
+  edge_centered_bed_stress(phys,grid,phys->tau_B);
+  
+  for(i=0;i<grid->Nc;i++) { taux[i]=tauy[i]=0.0; }
+  
+  // for each computational cell (non-stage defined)
+  for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
+    n=grid->cellp[iptr];
+
+    // over each face
+    for(nf=0;nf<grid->nfaces[n];nf++) {
+      j = grid->face[n*grid->maxfaces+nf];
+      tau_j=phys->tau_B[j];
+      taux[n]+=tau_j*grid->n1[j]*grid->def[n*grid->maxfaces+nf]*grid->df[j];
+      tauy[n]+=tau_j*grid->n2[j]*grid->def[n*grid->maxfaces+nf]*grid->df[j];
+    }
+    taux[n]/=grid->Ac[n];
+    tauy[n]/=grid->Ac[n];
+  }
+}
+
+void edge_centered_bed_stress(physT *phys, gridT *grid, REAL *tau) {
+  int j,k,nc1,nc2;
+  REAL u_bed_mag;
+  
+  for(j=0;j<grid->Ne;j++) {
+    // Replicate phys.c calculation of bed velocity
+    u_bed_mag=0;
+    k=grid->Nke[j]-1;
+    nc1 = grid->grad[2*j];
+    nc2 = grid->grad[2*j+1];
+    
+    if(nc1==-1) nc1=nc2;
+    if(nc2==-1) nc2=nc1;
+    
+    // first get tangential velocity in u_bed_mag
+    if ( grid->ctop[nc1]<=k ) {
+      u_bed_mag+=phys->uc[nc1][k]*grid->n2[j] - phys->vc[nc1][k]*grid->n1[j];
+    }
+    if ( grid->ctop[nc2]<=k ) {
+      u_bed_mag+=phys->uc[nc2][k]*grid->n2[j] - phys->vc[nc2][k]*grid->n1[j];
+    }
+    // square and average 
+    u_bed_mag *= u_bed_mag*0.25;
+    // add normal comp.
+    u_bed_mag += pow(phys->u[j][k],2);
+    // get as magnitude
+    u_bed_mag = sqrt(u_bed_mag);
+    // edge-normal quadratic drag law
+    tau[j]=phys->CdB[j]*u_bed_mag * phys->u[j][k];
+  }
 }
