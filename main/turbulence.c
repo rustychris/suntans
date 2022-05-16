@@ -824,6 +824,11 @@ void gls(gridT *grid, physT *phys, propT *prop, REAL **wnew, REAL **q, REAL **l,
       // Also happens in RCH spinup grid...
       if(nuT[i][k]>1.0 || nuT[i][k]!=nuT[i][k]) 
         nuT[i][k]=1.0;
+
+#ifdef TURB_SCALE
+      // for diagnosing impact of turbulence -- allow global scaling 
+      nuT[i][k]*=TURB_SCALE;
+#endif
       
       // per Bing, enforce the proper ratio between nuT and kappaT
       kappaT[i][k]=Sh/Sm*nuT[i][k];	

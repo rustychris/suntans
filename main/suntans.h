@@ -66,6 +66,9 @@
 // 1: enable
 #define HOR_ADV_TURBULENCE 1
 
+// for debugging. global scaling of nut and kappaT.
+// #define TURB_SCALE 0.2
+
 // define global variables for filenames
 char DATADIR[BUFFERLENGTH],
   DATAFILE[2*BUFFERLENGTH], // *2 for sprintf target
