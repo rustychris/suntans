@@ -63,7 +63,7 @@ int Nlayer, // number of bed layer -> given in sedi.dat
 } sedimentsT;
 
 // Globally allocate the pointer to the sediments structure
-sedimentsT *sediments;
+extern sedimentsT *sediments;
 
 void ReadSediProperties(int myproc);
 void InitializeSediment(gridT *grid, physT *phys, propT *prop,int myproc);

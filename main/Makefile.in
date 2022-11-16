@@ -16,10 +16,13 @@
 # Copyright (C) 2005-2006 The Board of Trustees of the Leland Stanford Junior 
 # University. All Rights Reserved.
 #
-MPIHOME=/usr
+#MPIHOME=/opt/dfm/t140737
+#NETCDF4HOME=/opt/dfm/t140737
+MPIHOME=/home/rusty/.conda/envs/general
+NETCDF4HOME=/home/rusty/.conda/envs/general
+
 PARMETISHOME=ext/ParMetis-3.1.1
 TRIANGLEHOME=../../triangle
-NETCDF4HOME=/usr
 NETCDFLIBDIR=$(shell $(NETCDF4HOME)/bin/nc-config --libs)
 NETCDFLD=
 NETCDFINCLUDE=$(shell $(NETCDF4HOME)/bin/nc-config --cflags)

@@ -18,15 +18,15 @@
 #define ALLPROFILEVARIABLES "husbTqnkC"
 #define DEFAULTPROFILEVARIABLES "husb"
 
-FILE *FreeSurfaceProfFID, *HorizontalVelocityProfFID, *VerticalVelocityProfFID,
+extern FILE *FreeSurfaceProfFID, *HorizontalVelocityProfFID, *VerticalVelocityProfFID,
   *SalinityProfFID, *BGSalinityProfFID, *TemperatureProfFID, *PressureProfFID, 
   *EddyViscosityProfFID, *ScalarDiffusivityProfFID, *ProfileDataFID,
   **SediProfFID;
 
-int existProfs, numInterpPoints, ntoutProfs, NkmaxProfs, numTotalDataPoints, numLocalDataPoints, *dataIndices, *interpIndices;
-int *total2d, all2d, *total3d, *allIndices;
-REAL *dataXY, *merge_tmp, *merge_tmp2;
-char ProfileVariables[BUFFERLENGTH];
+extern int existProfs, numInterpPoints, ntoutProfs, NkmaxProfs, numTotalDataPoints, numLocalDataPoints, *dataIndices, *interpIndices;
+extern int *total2d, all2d, *total3d, *allIndices;
+extern REAL *dataXY, *merge_tmp, *merge_tmp2;
+extern char ProfileVariables[BUFFERLENGTH];
 
 void InterpData(gridT *grid, physT *phys, propT *prop, MPI_Comm, int numprocs, int myproc);
 

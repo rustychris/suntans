@@ -16,6 +16,12 @@
  * University. All Rights Reserved.
  * 
  */
+#include <stdio.h>
+#include <execinfo.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+
 #include "suntans.h"
 #include "memory.h"
 #include "mympi.h"
@@ -26,6 +32,38 @@
 #include "physio.h"
 #include "report.h"
 
+
+/* Handler to print a stack trace on segfaults
+ */
+void handler(int sig) {
+  void *array[10];
+  size_t size;
+
+  // get void*'s for all entries on the stack
+  size = backtrace(array, 10);
+
+  // print out all the frames to stderr
+  fprintf(stderr, "Error: signal %d:\n", sig);
+  backtrace_symbols_fd(array, size, STDERR_FILENO);
+  exit(1);
+}
+
+// define global variables for filenames
+char DATADIR[BUFFERLENGTH],
+  DATAFILE[2*BUFFERLENGTH], // *2 for sprintf target
+  PSLGFILE[BUFFERLENGTH], 
+  POINTSFILE[BUFFERLENGTH], 
+  EDGEFILE[BUFFERLENGTH], 
+  CELLSFILE[BUFFERLENGTH], 
+  NODEFILE[BUFFERLENGTH], 
+  INPUTDEPTHFILE[BUFFERLENGTH],
+  CELLCENTEREDFILE[BUFFERLENGTH], 
+  EDGECENTEREDFILE[BUFFERLENGTH], 
+  VERTSPACEFILE[BUFFERLENGTH], 
+  TOPOLOGYFILE[BUFFERLENGTH];
+// define global variables
+int TRIANGULATE, GRID, SOLVE, VERBOSE, WARNING, ASCII, RESTART, NUMPROCS, STEPSPERFILE;
+
 int main(int argc, char *argv[])
 {
   int myproc, numprocs, j;
@@ -34,6 +72,8 @@ int main(int argc, char *argv[])
   physT *phys;
   propT *prop;
 
+  signal(SIGSEGV, handler); // install SIGSEGV handler
+  
   StartMpi(&argc,&argv,&comm,&myproc,&numprocs);
 
   ParseFlags(argc,argv,myproc);

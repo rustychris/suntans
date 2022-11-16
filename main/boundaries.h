@@ -165,9 +165,9 @@ typedef struct _boundT{
 } boundT;
 
 // Declare the boundary structure global
-boundT *bound;
+extern boundT *bound;
 
-FILE *windFID;
+extern FILE *windFID;
 
 void OpenBoundaryFluxes(REAL **q, REAL **ub, REAL **ubn, gridT *grid, physT *phys, propT *prop,
                         int myproc);

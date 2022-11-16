@@ -9,8 +9,8 @@
  * University. All Rights Reserved.
  *
  */
-#include<stdio.h>
-#include<string.h>
+#include <stdio.h>
+#include <string.h>
 #include "util.h"
 #include "memory.h"
 #include "grid.h"
@@ -18,6 +18,18 @@
 #include "suntans.h"
 #include "sediments.h"
 #include "profiles.h"
+
+
+FILE *FreeSurfaceProfFID, *HorizontalVelocityProfFID, *VerticalVelocityProfFID,
+  *SalinityProfFID, *BGSalinityProfFID, *TemperatureProfFID, *PressureProfFID, 
+  *EddyViscosityProfFID, *ScalarDiffusivityProfFID, *ProfileDataFID,
+  **SediProfFID;
+
+int existProfs, numInterpPoints, ntoutProfs, NkmaxProfs, numTotalDataPoints, numLocalDataPoints, *dataIndices, *interpIndices;
+int *total2d, all2d, *total3d, *allIndices;
+REAL *dataXY, *merge_tmp, *merge_tmp2;
+char ProfileVariables[BUFFERLENGTH];
+
 
 /*
  * All functions are private except for InterpData which is called from phys.c

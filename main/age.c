@@ -11,6 +11,8 @@
 #include "scalars.h"
 #include "mynetcdf.h"
 
+ageT *age;
+
 /*
  * Private functions
  */

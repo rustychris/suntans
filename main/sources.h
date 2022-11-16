@@ -16,8 +16,8 @@
 #include "phys.h"
 #include "met.h"
 
-REAL **v_coriolis;
-REAL *rSponge;
+extern REAL **v_coriolis;
+extern REAL *rSponge;
 
 void MomentumSource(REAL **usource, gridT *grid, physT *phys, propT *prop);
 void HeatSource(REAL **A, REAL **B, gridT *grid, physT *phys, propT *prop, metT *met, int myproc, MPI_Comm comm);

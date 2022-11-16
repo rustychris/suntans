@@ -12,6 +12,13 @@
 #include "merge.h"
 #include "memory.h"
 
+/* Global variables */
+gridT *mergedGrid;
+int *Nc_all, *Ne_all, Nc_max, Ne_max;
+int **mnptr_all, **eptr_all, *send3DSize, *send3DESize, *send2DESize;
+REAL *localTempMergeArray, *localTempEMergeArray, *merged2DArray, **merged3DArray, *merged3DVector, **merged3DEArray;
+int *merged2DArray_int, *localTempMergeArray_int;
+
 /*
  * Private Functions
  */

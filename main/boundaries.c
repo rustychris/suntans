@@ -14,6 +14,11 @@
 #include "mynetcdf.h"
 #include "sediments.h"
 
+/* boundary-related globals */
+boundT *bound;
+FILE *windFID;
+
+
 // Local functions
 //static void GetBoundaryVelocity(REAL *ub, int *forced, REAL x, REAL y, REAL t, REAL h, REAL d, REAL omega, REAL amp);
 //static void SetUVWH(gridT *grid, physT *phys, propT *prop, int ib, int j, int boundary_index, REAL boundary_flag);

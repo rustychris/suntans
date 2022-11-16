@@ -17,6 +17,9 @@
 #include "memory.h"
 #include "sendrecv.h"
 
+REAL **v_coriolis;
+REAL *rSponge;
+
 void MomentumSource(REAL **usource, gridT *grid, physT *phys, propT *prop) {
   int j, jptr, nc1, nc2, k;
   REAL Coriolis_f, ubar, depth_face;

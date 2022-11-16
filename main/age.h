@@ -21,7 +21,7 @@ typedef struct _ageT {
 } ageT;
 
 //Make the age struct global
-ageT *age;
+extern ageT *age;
 
 /*
  * Public function declarations.

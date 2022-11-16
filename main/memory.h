@@ -16,7 +16,7 @@
 
 extern unsigned long TotSpace;
 extern int VerboseMemory;
-char oldAllocFunction[BUFFERLENGTH], oldFreeFunction[BUFFERLENGTH];
+extern char oldAllocFunction[BUFFERLENGTH], oldFreeFunction[BUFFERLENGTH];
 
 /*
  * Function: SunMalloc

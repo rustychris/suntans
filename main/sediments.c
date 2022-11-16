@@ -24,6 +24,8 @@
 #include "scalars.h"
 #include "physio.h"
 
+sedimentsT *sediments;
+
 /*
  * Function: ReadSediProperties
  * Usage: ReadSediProperties(grid,phys,prop,myproc);

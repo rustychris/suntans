@@ -23,6 +23,7 @@
 int VerboseMemory=1;
 unsigned long TotSpace=0;
 unsigned long HighWater=0;
+char oldAllocFunction[BUFFERLENGTH], oldFreeFunction[BUFFERLENGTH];
 
 /*
  * Function: SunMalloc
