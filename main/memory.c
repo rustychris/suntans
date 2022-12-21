@@ -47,8 +47,8 @@ void *SunMalloc(const unsigned bytes, const char *function) {
     if ( TotSpace > HighWater ) HighWater=TotSpace;
     
     if(VerboseMemory) {
-      if(strcmp(function,oldAllocFunction)) 
-	printf("Allocated %u, Total: %lu  High water: %lu (%s)\n",bytes,TotSpace,HighWater,function);
+      /* if(strcmp(function,oldAllocFunction)) 
+	 printf("Allocated %u, Total: %lu  High water: %lu (%s)\n",bytes,TotSpace,HighWater,function); */
       strcpy(oldAllocFunction,function);
     }
     return ptr;

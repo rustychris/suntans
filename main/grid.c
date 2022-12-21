@@ -670,19 +670,27 @@ static void CreateFaceArray(int *grad, int *gradf, int *neigh, int *face, int *n
   int n, j, nf, nc, nc1, nc2, nb;
 
   // initialize all the faces to ghost faces in each cell over all faces of a cell
-  for(n=0;n<Nc;n++)
-    for(nf=0;nf<nfaces[n];nf++)
-      face[n*maxfaces+nf]=-1; 
-  for(n=0;n<Ne;n++)
-    for(j=0;j<2;j++)
+  for(n=0;n<Nc;n++) {
+    for(nf=0;nf<nfaces[n];nf++) {
+      face[n*maxfaces+nf]=-1;
+    }
+  }
+  for(n=0;n<Ne;n++) {
+    for(j=0;j<2;j++) {
       gradf[2*n+j]=-1;
-
+    }
+  }
+  
   // over each edge
   for(n=0;n<Ne;n++) {
     nc1 = grad[2*n];
     nc2 = grad[2*n+1];
     // for a purely computational edge (no ghost cells adjacent to face)
-    if(nc1!=-1 && nc2!=-1)
+    if(nc1!=-1 && nc2!=-1) {
+      // 20221221 RH: This was suspicious. nf looped over nfaces for nc1, but nf was then
+      // used to also consider nc2 neighbors. This might explain the gradf errors I was seeing.
+      // Have split the loop to separately consider nc1 and nc2.
+
       for(nf=0;nf<nfaces[nc1];nf++) {
         // get a face for neighboring cell adjacent to edge for first cell touching edge
         nb = neigh[nc1*maxfaces+nf];
@@ -694,14 +702,28 @@ static void CreateFaceArray(int *grad, int *gradf, int *neigh, int *face, int *n
           face[nc1*maxfaces+nf]=n;
           gradf[2*n] = nf;
           //printf("face = %d",face[nc1*maxfaces+nf]);
+	  break;
         }
+      }
+      for(nf=0;nf<nfaces[nc2];nf++) {
         // get a face for neighboring cell adjacent to edge for second cell touching edge
         nb = neigh[nc2*maxfaces+nf];
         if(nb==nc1) {
           face[nc2*maxfaces+nf]=n;
           gradf[2*n+1] = nf;
+	  break;
         }
       }
+
+      // RH: 2022-12-21: changed the loops to separately consider nfaces for nc1 and nc2.
+      // Also add this check:
+      if( gradf[2*n]<0 || gradf[2*n+1]<0) {
+	printf("Edge with 2 real cells failed to find gradf (edge %d, nc1=%d, nc2=%d)\n",
+	       n,nc1,nc2);
+	MPI_Finalize();
+	exit(EXIT_FAILURE);  
+      }
+    }
   }
 
   // consider possibility that one of the faces is a boundary face (ghost cell adjacent = -1)

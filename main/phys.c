@@ -1317,7 +1317,7 @@ void Solve(gridT *grid, physT *phys, propT *prop, int myproc, int numprocs, MPI_
   // it also means that a specific index of average output i is integrating over
   // the time step [i-1,i].
   if(prop->calcaverage){
-    printf("[p=%d] Output initial averaged values\n",myproc);
+    // printf("[p=%d] Output initial averaged values\n",myproc);
 
     // The average values themselves are meaningless, but this will populate
     // the instantaneous values
@@ -2261,6 +2261,13 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
     def2 = grid->def[nc2*grid->maxfaces+grid->gradf[2*j+1]];
     dgf = def1+def2;
 
+    // if ( def2!=def2 ) {
+    //   printf("[p=%d] def for nc2=%d j=%d is %f maxfaces=%d gradf[2*j+1]=%d\n",myproc,nc2,j,def2,
+    // 	     grid->maxfaces, grid->gradf[2*j+1]);
+    //   printf("  xv=%f yv=%f\n",grid->xv[nc2],grid->yv[nc2]);
+    //   exit(1);
+    // }
+
     if(grid->ctop[nc1]>grid->ctop[nc2])
       k0=grid->ctop[nc1];
     else
@@ -2288,7 +2295,10 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
         printf("  [p=%d j=%d k=% 2d c=% 2d] delta Cn_U=%.9f  stmp=%.5f, stmp2=%.5f\n",
                myproc, j, k, nc1,
                -def1/dgf*prop->dt*(phys->stmp[nc1][k]*grid->n1[j]+phys->stmp2[nc1][k]*grid->n2[j]),
-               phys->stmp[nc1][k], phys->stmp2[nc1][k]);
+               phys->stmp[nc1][k], phys->stmp2[nc1][k] );
+	printf("    def1=%.5f dgf=%.5f  n1=%.3f n2=%.3f\n",
+	       def1,dgf,grid->n1[j],grid->n2[j]);
+	
       }
       printf("\nCn_U updated from cell %d\n",nc2);
       for(k=k0;k<grid->Nk[nc2];k++) {
@@ -2296,6 +2306,8 @@ static void HorizontalSource(gridT *grid, physT *phys, propT *prop,
                myproc, j, k, nc2,
                -def2/dgf*prop->dt*(phys->stmp[nc2][k]*grid->n1[j]+phys->stmp2[nc2][k]*grid->n2[j]),
                phys->stmp[nc2][k],phys->stmp2[nc2][k]);
+	printf("    def2=%.5f dgf=%.5f  n1=%.3f n2=%.3f\n",
+	       def2,dgf,grid->n1[j],grid->n2[j]);
       }
     }
 #endif
@@ -3576,7 +3588,9 @@ static void UPredictor(gridT *grid, physT *phys, metT* met,
 
     for(k=grid->etop[j];k<grid->Nke[j];k++) {
       if(phys->utmp[j][k]!=phys->utmp[j][k]) {
-        printf("[p=%d] Error in function Predictor at j=%d k=%d (U***=nan)\n",myproc,j,k);
+        printf("[p=%d] Error in function Predictor at j=%d k=%d (U***=nan). loc=[%f,%f]\n",myproc,j,k,
+	       grid->xe[j], grid->ye[j]);
+        printf("[p=%d]  dg=%f\n",myproc,grid->dg[j]);
         exit(EXIT_FAILURE);
       }
     }

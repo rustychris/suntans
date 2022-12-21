@@ -4240,9 +4240,9 @@ void WriteAverageNCmerge(propT *prop, gridT *grid, averageT *average, physT *phy
    // RH moved to UpdateAverageVariables
    //prop->avgctr+=1;
 
-   if (prop->n==0) {
-     printf("We do get prop->n==0\n");
-   }
+   // if (prop->n==0) {
+   //   printf("We do get prop->n==0\n");
+   // }
    
    // Output the first time step but don't compute the average
    // note that the first step of output from a restart will not
