@@ -18,7 +18,8 @@
 #include "fileio.h"
 
 // TVD Method.  0=No TVD (Uses method in original scheme, which is First-order upwind)
-// Otherwise, TVD is implemented, with TVDMACRO=1: First-order upwind, 2: Lax-Wendroff, 3: Superbee, 4: Van Leer
+// Otherwise, TVD is implemented, with TVDMACRO=1: First-order upwind, 2: Lax-Wendroff, 3: Superbee,
+// 4: minmod, 5: Van Leer
 // Note that this TVD implementation does not work with wetting and drying and is 
 // not strictly tvd.
 // This is now defined in defaults.h and can be set in suntans.dat for each of salt, temperature, and turbulence

@@ -128,7 +128,8 @@ void HorizontalFaceScalars(gridT *grid, physT *phys, propT *prop, REAL **scal, R
  * ---------------------------------------------------------------------------
  * Calculate the filter function Psi for TVD schemes 
  * TVD=1  first-order upwind,    TVD=2  Lax-Wendroff
- * TVD=3  Superbee,              TVD=4  Van Leer  
+ * TVD=3  Superbee,              TVD=4  minmod
+ * TVD=5  van Leer
  */
 static REAL Psi(REAL r, int TVD){
   switch(TVD) {
@@ -139,7 +140,7 @@ static REAL Psi(REAL r, int TVD){
     return 1;
     break;
   case 3:
-    return ( Max(0, Max(Min(2*(r),1), Min(r,2))));
+    return ( Max(0, Max(Min(2*r,1), Min(r,2))));
     break;
   case 4:
     if(r>0)
@@ -147,6 +148,11 @@ static REAL Psi(REAL r, int TVD){
     else
       return 0;
     break;
+  case 5: // 2023-02-07 RH: adding proper van Leer.
+    if(r>0)
+      return 2*r/(1+r);
+    else
+      return 0;
   default:
     return 0;
     break;
