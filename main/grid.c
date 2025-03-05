@@ -1449,7 +1449,7 @@ static void FreeGrid(gridT *grid, int numprocs)
 static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
 {
   int i, j, k, ne, npc, myproc, numprocs, vertgridcorrect, stairstep, maxNk;
-  REAL dz0, dmin, dmax, dmaxtest;
+  REAL dz0, dmin, dmax, dmax_sum_dz;
 
   MPI_Comm_size(comm,&numprocs);
   MPI_Comm_rank(comm,&myproc);
@@ -1458,7 +1458,7 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
   vertgridcorrect = MPI_GetValue(DATAFILE,"vertgridcorrect","VertGrid",myproc);
   stairstep = MPI_GetValue(DATAFILE,"stairstep","VertGrid",myproc);
 
-  // compute dmin and dmax for all the points on the main grid
+  // compute min and max depth (dmin and dmax) over all the cells on the main grid
   if(myproc==0) {
     dmax = maingrid->dv[0];
     dmin = maingrid->dv[0];
@@ -1487,12 +1487,12 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
     
     // get vertical grid spacing from initialization file
     GetDZ(maingrid->dz,dmax,dmax,maingrid->Nkmax,myproc);
-    dmaxtest=0;
+    dmax_sum_dz=0;
     for(k=0;k<maingrid->Nkmax;k++)
-      dmaxtest+=maingrid->dz[k];
+      dmax_sum_dz+=maingrid->dz[k];
     for(i=0;i<maingrid->Nc;i++)
-      if(fabs(maingrid->dv[i]-dmaxtest)>SMALL && WARNING) {
-        printf("Warning...sum of grid spacings dz is less than depth! %e\n",maingrid->dv[i]-dmaxtest);
+      if(fabs(maingrid->dv[i]-dmax_sum_dz)>SMALL && WARNING) {
+        printf("Warning...sum of grid spacings dz is less than depth! %e\n",maingrid->dv[i]-dmax_sum_dz);
         break;
       }
   }
@@ -1504,6 +1504,9 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
   // transfer dz, dz0, and dmax to other processors
   MPI_Bcast((void *)maingrid->dz,maingrid->Nkmax,MPI_DOUBLE,0,comm);
   MPI_Bcast(&dz0,1,MPI_DOUBLE,0,comm);
+
+  // RH: at this point should dmax actually be updated with dmax_sum_dz?
+  //     dmax_sum_dz is used for other things, so can't just change to using that.
   MPI_Bcast(&dmax,1,MPI_DOUBLE,0,comm);
   
   (*localgrid)->Nkmax = maingrid->Nkmax;
@@ -1531,18 +1534,17 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
     // and then copy global to local.
     
     // for each global cell set number of layers 
-    for(i=0;i<maingrid->Nc;i++) 
-      if(maingrid->dv[i]==dmax) 
-        maingrid->Nk[i] = maingrid->Nkmax;
-      else {
-        dmaxtest=0;
-        for(k=0;k<maingrid->Nkmax;k++) {
-          dmaxtest+=maingrid->dz[k];
+    for(i=0;i<maingrid->Nc;i++) {
+      maingrid->Nk[i] = maingrid->Nkmax; // fallback
+      dmax_sum_dz=0;
+      for(k=0;k<maingrid->Nkmax;k++) {
+        dmax_sum_dz+=maingrid->dz[k]; // depth to bottom of this layer
+        if(dmax_sum_dz>=maingrid->dv[i]) {
           maingrid->Nk[i] = k+1;
-          if(dmaxtest>=maingrid->dv[i]) 
-            break;
+          break;
         }
       }
+    }
     
     for(i=0;i<(*localgrid)->Nc;i++) {
       // RH this used to recalculate Nk locally, but
@@ -1572,11 +1574,11 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
   // To use stair-stepping do this (not partial-stepping).
   if(stairstep) {
     for(i=0;i<(*localgrid)->Nc;i++) {
-      dmaxtest=0;
+      dmax_sum_dz=0;
       for(k=0;k<(*localgrid)->Nk[i];k++)
-        dmaxtest+=(*localgrid)->dz[k];
-      // depth adjusted for cell disctretization in vertical
-      (*localgrid)->dv[i]=dmaxtest;
+        dmax_sum_dz+=(*localgrid)->dz[k];
+      // depth adjusted for cell discretization in vertical
+      (*localgrid)->dv[i]=dmax_sum_dz;
     }
   }
 
@@ -1630,22 +1632,20 @@ static void VertGrid(gridT *maingrid, gridT **localgrid, MPI_Comm comm)
   // this also where stairstepping is optionally applied to edges.
   if( (*localgrid)->Nkmax>1 ) {
     for(j=0;j<(*localgrid)->Ne;j++) {
-      if((*localgrid)->de[j]==dmax) {
-        ne = (*localgrid)->Nkmax;
-      } else {
-        // use ne to calculate a new Nke based on de
-        dmaxtest=0;
-        for(k=0;k<(*localgrid)->Nkmax;k++) {
-          dmaxtest+=(*localgrid)->dz[k];
+      ne = (*localgrid)->Nkmax; // fallback
+      // use ne to calculate a new Nke based on de
+      dmax_sum_dz=0;
+      for(k=0;k<(*localgrid)->Nkmax;k++) {
+        dmax_sum_dz+=(*localgrid)->dz[k];
+        if(dmax_sum_dz>=(*localgrid)->de[j]) {
           ne=k+1;
-          if(dmaxtest>=(*localgrid)->de[j]) 
-            break;
+          break;
         }
-        // RH 2019-01-16: pretty sure about this..
-        if(stairstep) {
-          // depth adjusted for cell disctretization in vertical
-          (*localgrid)->de[j]=dmaxtest;
-        }
+      }
+      // RH 2019-01-16: pretty sure about this..
+      if(stairstep) {
+        // depth adjusted for cell disctretization in vertical
+        (*localgrid)->de[j]=dmax_sum_dz;
       }
       if( ne<(*localgrid)->Nke[j] )
         (*localgrid)->Nke[j]=ne;

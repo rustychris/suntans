@@ -459,7 +459,7 @@ static void MergeGridVariables(gridT *grid, int numprocs, int myproc, MPI_Comm c
 
   int iptr, i, p, nf, nff, jptr, j;
   int *Ne_int, *Nc_int, *NcNs_int, *Ne2_int;
-  REAL *Nc_real, *Ne_real, NcNs_real;
+  REAL *Nc_real, *Ne_real, *NcNs_real;
 
   MPI_Status status;
 
@@ -468,6 +468,7 @@ static void MergeGridVariables(gridT *grid, int numprocs, int myproc, MPI_Comm c
   Nc_int=(int *)SunMalloc(Nc_max*sizeof(int),"MergeGridVariables");
   Ne_int=(int *)SunMalloc(Ne_max*sizeof(int),"MergeGridVariables");
   NcNs_int=(int *)SunMalloc(grid->maxfaces*Nc_max*sizeof(int),"MergeGridVariables");
+  NcNs_real=(REAL *)SunMalloc(grid->maxfaces*Nc_max*sizeof(REAL),"MergeGridVariables");
   Ne2_int=(int *)SunMalloc(2*Ne_max*sizeof(int),"MergeGridVariables");
 
   Nc_real=(REAL *)SunMalloc(Nc_max*sizeof(REAL),"MergeGridVariables");
@@ -490,7 +491,12 @@ static void MergeGridVariables(gridT *grid, int numprocs, int myproc, MPI_Comm c
     mergedGrid->normal = (int *)SunMalloc(mergedGrid->maxfaces*mergedGrid->Nc*sizeof(int),"MergeGridVariables");
     mergedGrid->def = (REAL *)SunMalloc(mergedGrid->maxfaces*mergedGrid->Nc*sizeof(REAL),"MergeGridVariables");
     mergedGrid->cells = (int *)SunMalloc(mergedGrid->maxfaces*mergedGrid->Nc*sizeof(REAL),"MergeGridVariables");
-
+    // quash uninitialized memory warnings
+    for(i=0;i<mergedGrid->maxfaces*mergedGrid->Nc;i++) {
+      mergedGrid->def[i] = 0.0;
+      mergedGrid->normal[i] = 0;
+    }
+    
     mergedGrid->df = (REAL *)SunMalloc(mergedGrid->Ne*sizeof(REAL),"MergeGridVariables");
     mergedGrid->dg = (REAL *)SunMalloc(mergedGrid->Ne*sizeof(REAL),"MergeGridVariables");
     mergedGrid->n1 = (REAL *)SunMalloc(mergedGrid->Ne*sizeof(REAL),"MergeGridVariables");
@@ -679,7 +685,8 @@ static void MergeGridVariables(gridT *grid, int numprocs, int myproc, MPI_Comm c
     for(iptr=grid->celldist[0];iptr<grid->celldist[2];iptr++) {
       i=grid->cellp[iptr];
       for(nf=0;nf<grid->nfaces[i];nf++){
-	  NcNs_int[(iptr-grid->celldist[0])*grid->maxfaces+nf]=grid->normal[i*grid->maxfaces+nf];
+        NcNs_int[(iptr-grid->celldist[0])*grid->maxfaces+nf]=grid->normal[i*grid->maxfaces+nf];
+        NcNs_real[(iptr-grid->celldist[0])*grid->maxfaces+nf]=grid->def[i*grid->maxfaces+nf];
       }
     }
     MPI_Send(NcNs_int,(grid->celldist[2]-grid->celldist[0])*grid->maxfaces,MPI_INT,0,1,comm);       
@@ -688,14 +695,18 @@ static void MergeGridVariables(gridT *grid, int numprocs, int myproc, MPI_Comm c
       i=grid->cellp[iptr];
       for(nf=0;nf<grid->nfaces[i];nf++){
 	  mergedGrid->normal[grid->mnptr[i]*grid->maxfaces+nf]=grid->normal[i*grid->maxfaces+nf];
+          // RH: Trying to silence uninitialized memory message from valgrind
+	  mergedGrid->def[grid->mnptr[i]*grid->maxfaces+nf]=grid->def[i*grid->maxfaces+nf];
       }
     }
     for(p=1;p<numprocs;p++) {
       MPI_Recv(NcNs_int,Nc_all[p]*grid->maxfaces,MPI_INT,p,1,comm,&status);         
+      MPI_Recv(NcNs_real,Nc_all[p]*grid->maxfaces,MPI_DOUBLE,p,1,comm,&status);         
       for(i=0;i<Nc_all[p];i++){
          nff = mergedGrid->nfaces[mnptr_all[p][i]];
 	 for(nf=0;nf<nff;nf++){
 	    mergedGrid->normal[mnptr_all[p][i]*grid->maxfaces+nf]=NcNs_int[i*grid->maxfaces+nf];
+	    mergedGrid->def[mnptr_all[p][i]*grid->maxfaces+nf]=NcNs_real[i*grid->maxfaces+nf];
 	 }
       }
     }

@@ -714,7 +714,16 @@ void InitializePhysicalVariables(gridT *grid, physT *phys, propT *prop, int mypr
     // it gets set to the default value from suntans.dat first.
     ReturnZ0BNC(prop, phys, grid, ncscratch, Nei, T0, myproc);
   }
-  
+
+  // quash uninitialized memory warnings
+  for(i=0;i<Nc;i++) {
+    for(k=0;k<grid->Nk[i];k++){
+      phys->uc[i][k] = 0.0;
+      phys->vc[i][k] = 0.0;
+      phys->uold[i][k] = 0.0;
+      phys->vold[i][k] = 0.0;
+    }
+  }
   // Need to compute the velocity vectors at the cell centers based
   // on the initialized velocities at the faces.
   ComputeUC(phys->uc, phys->vc, phys, grid, myproc, prop->interp);
@@ -2466,6 +2475,10 @@ static void WPredictor(gridT *grid, physT *phys, propT *prop,
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i = grid->cellp[iptr]; 
 
+    // Skip dry cells
+    if(grid->ctop[i]==grid->Nk[i]) 
+      continue;
+
     for(k=grid->ctop[i];k<grid->Nk[i];k++) {
       // phys->wtmp[i][k]=phys->w[i][k]+(1-fab)*phys->Cn_W[i][k];
       //AB3
@@ -2473,7 +2486,6 @@ static void WPredictor(gridT *grid, physT *phys, propT *prop,
 
       phys->Cn_W2[i][k]=phys->Cn_W[i][k];
       phys->Cn_W[i][k]=0;
-
     }
 
     for(k=grid->ctop[i]+1;k<grid->Nk[i];k++) 
@@ -2510,6 +2522,9 @@ static void WPredictor(gridT *grid, physT *phys, propT *prop,
 
     for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
       i=grid->cellp[iptr];
+      
+      if(grid->ctop[i]==grid->Nk[i])
+        continue; // Skip dry cell
 
       // For conservative scheme need to divide by depth (since ut is a flux)
       if(prop->conserveMomentum) {
@@ -2530,9 +2545,10 @@ static void WPredictor(gridT *grid, physT *phys, propT *prop,
 
         // Top cell is filled with momentum from neighboring cells
 	if(prop->conserveMomentum)
-	  for(k=grid->etop[ne];k<grid->ctop[i];k++)
+	  for(k=grid->etop[ne];k<grid->ctop[i];k++) {
             // RH: index a[] by ctop, not k.
 	    phys->stmp[i][grid->ctop[i]]+=phys->ut[ne][k]*phys->utmp2[ne][k]*grid->df[ne]*grid->normal[i*grid->maxfaces+nf]/(a[grid->ctop[i]]*grid->Ac[i]);
+          }
       }
 
       // Vertical advection; note that in this formulation first-order upwinding is not implemented.
@@ -2608,7 +2624,9 @@ static void WPredictor(gridT *grid, physT *phys, propT *prop,
 
   //Now use the cell-centered advection terms to update the advection at the faces
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
-    i = grid->cellp[iptr]; 
+    i = grid->cellp[iptr];
+    if(grid->ctop[i]==grid->Nk[i])
+      continue; // Skip dry cells
 
     for(k=grid->ctop[i]+1;k<grid->Nk[i];k++) 
       phys->Cn_W[i][k]-=prop->dt*(grid->dzz[i][k-1]*phys->stmp[i][k-1]+grid->dzz[i][k]*phys->stmp[i][k])/
@@ -2711,7 +2729,9 @@ static void Corrector(REAL **qc, gridT *grid, physT *phys, propT *prop, int mypr
 
   // Correct the vertical velocity
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
-    i = grid->cellp[iptr]; 
+    i = grid->cellp[iptr];
+    if(grid->ctop[i]==grid->Nk[i])
+      continue;
     for(k=grid->ctop[i]+1;k<grid->Nk[i];k++)
       phys->w[i][k]-=2.0*prop->dt/(grid->dzz[i][k-1]+grid->dzz[i][k])*
         (qc[i][k-1]-qc[i][k]);
@@ -4202,6 +4222,9 @@ static void QCoefficients(REAL **coef, REAL **fcoef, REAL **c, gridT *grid,
     for(i=0;i<grid->Nc;i++) {
       //      i = grid->cellp[iptr];
 
+      if(grid->ctop[i]==grid->Nk[i])
+        continue; // Skip dry
+      
       // compute the cell coeficient for the top cell
       coef[i][grid->ctop[i]]=grid->Ac[i]/grid->dzz[i][grid->ctop[i]];
       // compute the coefficients for the rest of the cells (towards bottom)
@@ -4234,6 +4257,9 @@ static void OperatorQ(REAL **coef, REAL **x, REAL **y, REAL **c, gridT *grid, ph
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i = grid->cellp[iptr];
 
+    if(grid->ctop[i]==grid->Nk[i])
+      continue; // Skip dry cells
+    
     // over cells that exist and aren't cut off by bathymetry
     for(k=grid->ctop[i];k<grid->Nk[i];k++) 
       y[i][k]=0;
@@ -4326,6 +4352,8 @@ static void Preconditioner(REAL **x, REAL **xc, REAL **coef, gridT *grid, physT 
 
   for(iptr=grid->celldist[0];iptr<grid->celldist[1];iptr++) {
     i=grid->cellp[iptr];
+    if(grid->ctop[i]==grid->Nk[i])
+      continue; // Skip dry cells
 
     if(grid->ctop[i]<grid->Nk[i]-1) {
       for(k=grid->ctop[i]+1;k<grid->Nk[i]-1;k++) {

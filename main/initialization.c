@@ -16,6 +16,13 @@
 #include "initialization.h"
 #include "mynetcdf.h"
 
+/* this mimics grid->dz_lump_bed_frac - it is not strictly necessary that the value
+   defined here be the same as what is used elsewhere - it is used just for determining
+   computational cost of each water column.
+*/
+#define DZ_LUMP_BED_FRAC 0.2
+
+
 #define sech 1/cosh
 /*
  * Function: GetDZ
@@ -27,43 +34,97 @@
 int GetDZ(REAL *dz, REAL depth, REAL localdepth, int Nkmax, int myproc) {
   int k, status;
   REAL z=0, dz0, r = GetValue(DATAFILE,"rstretch",&status);
+  /* Added for reading vertspace.at */
+  char fname[BUFFERLENGTH];
+  FILE *vertspace_fp=NULL;
+  static REAL *vertspace_cached=NULL;
 
-  if(dz!=NULL) {
-    if(r==1) 
-      for(k=0;k<Nkmax;k++)
-	dz[k]=depth/Nkmax;
-    else if(r>1 && r<=1.3) {    
-      dz[0] = depth*(r-1)/(pow(r,Nkmax)-1);
-      if(VERBOSE>2) printf("Minimum vertical grid spacing is %.2f\n",dz[0]);
-      for(k=1;k<Nkmax;k++) 
-	dz[k]=r*dz[k-1];
-    } else if(r>-1.3 && r<-1) {    
-      r=fabs(r);
-      dz[Nkmax-1] = depth*(r-1)/(pow(r,Nkmax)-1);
-      if(VERBOSE>2) printf("Minimum vertical grid spacing is %.2f\n",dz[Nkmax-1]);
-      for(k=Nkmax-2;k>=0;k--) 
-	dz[k]=r*dz[k+1];
+  /* RH: special case, if r==0, then use a pre-existing vertspace.dat */
+  REAL dz_k;
+  static int warned=0;
+
+  if ( r == 0.0) {
+    if(!vertspace_cached ) {
+      vertspace_cached = (REAL*)SunMalloc(sizeof(REAL)*Nkmax,"GetDZ");
+
+      sprintf(fname,"%s/vertspace.dat.in",DATADIR);
+
+      if ( !warned ) {
+        printf("RH: using pre-existing vertspace.dat.in in GetDZ\n");
+        printf("     reading from %s\n",fname);
+        warned = 1;
+      }
+
+      vertspace_fp = MPI_FOpen(fname,"r","GetDZ",myproc);
+
+      for(k=0;k<Nkmax;k++) {
+        vertspace_cached[k] = getfield(vertspace_fp,fname);
+      }
+      fclose(vertspace_fp);
+    }
+    if ( dz != NULL ) {
+      for(k=0;k<Nkmax;k++) {
+        dz[k] = vertspace_cached[k];
+      }
+      return -999;
     } else {
-      printf("Error in GetDZ when trying to create vertical grid:\n");
-      printf("Absolute value of stretching parameter rstretch must  be in the range (1,1.1).\n");
-      exit(1);
+      z=0;
+      for (k=0;k<Nkmax;k++) {
+        dz_k = vertspace_cached[k];
+
+        z += dz_k; // z is now the depth of the bottom of layer k
+
+        if ( z >= localdepth ) {
+          // Check to see if this cell should be lumped
+          if ( localdepth - (z-dz_k) < DZ_LUMP_BED_FRAC * dz_k) {
+            return k;
+          }
+          return k+1; // return the number of layers
+        }
+      }
+      printf("\nWARNING: Assigning Nkmax, localdepth = %f\n\n", localdepth);
+      printf("Depth = %f\n", depth);
+      printf("z = %f\n", z);
+      return Nkmax;
     }
   } else {
-    r=fabs(r);
-    if(r!=1)
-      dz0 = depth*(r-1)/(pow(r,Nkmax)-1);
-    else
-      dz0 = depth/Nkmax;
-    z = dz0;
-    for(k=1;k<Nkmax;k++) {
-      dz0*=r;
-      z+=dz0;
-      if(z>=localdepth) {
-	return k;
+    /* Existing handling for r != 0 left unchanged */
+    if(dz!=NULL) {
+      if(r==1) 
+        for(k=0;k<Nkmax;k++)
+  	  dz[k]=depth/Nkmax;
+      else if(r>1 && r<=1.3) {    
+        dz[0] = depth*(r-1)/(pow(r,Nkmax)-1);
+        if(VERBOSE>2) printf("Minimum vertical grid spacing is %.2f\n",dz[0]);
+        for(k=1;k<Nkmax;k++) 
+	  dz[k]=r*dz[k-1];
+      } else if(r>-1.3 && r<-1) {    
+        r=fabs(r);
+        dz[Nkmax-1] = depth*(r-1)/(pow(r,Nkmax)-1);
+        if(VERBOSE>2) printf("Minimum vertical grid spacing is %.2f\n",dz[Nkmax-1]);
+        for(k=Nkmax-2;k>=0;k--) 
+	  dz[k]=r*dz[k+1];
+      } else {
+        printf("Error in GetDZ when trying to create vertical grid:\n");
+        printf("Absolute value of stretching parameter rstretch must  be in the range (1,1.1).\n");
+        exit(1);
+      }
+    } else {
+      r=fabs(r);
+      if(r!=1)
+        dz0 = depth*(r-1)/(pow(r,Nkmax)-1);
+      else
+        dz0 = depth/Nkmax;
+      z = dz0;
+      for(k=1;k<Nkmax;k++) {
+        dz0*=r;
+        z+=dz0;
+        if(z>=localdepth) {
+	  return k;
+        }
       }
     }
   }
-
   return -1;
 }
   
