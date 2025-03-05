@@ -690,6 +690,7 @@ static void MergeGridVariables(gridT *grid, int numprocs, int myproc, MPI_Comm c
       }
     }
     MPI_Send(NcNs_int,(grid->celldist[2]-grid->celldist[0])*grid->maxfaces,MPI_INT,0,1,comm);       
+    MPI_Send(NcNs_real,(grid->celldist[2]-grid->celldist[0])*grid->maxfaces,MPI_REAL,0,1,comm);       
   } else {//myproc==0
     for(iptr=grid->celldist[0];iptr<grid->celldist[2];iptr++) {
       i=grid->cellp[iptr];
