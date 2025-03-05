@@ -1473,7 +1473,7 @@ static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, 
      if ((retval = nc_def_var(ncid,"tauB_x",NC_DOUBLE,2,dimidtwo,&varid)))
        ERR(retval); 
      nc_addattr(ncid, varid,"long_name","Bed stress x-component, cell-centered from u_edge");
-     nc_addattr(ncid, varid,"units","N m-2");
+     nc_addattr(ncid, varid,"units","m2 s-2");
      nc_addattr(ncid, varid,"mesh","suntans_mesh");
      nc_addattr(ncid, varid,"location","face");
      nc_addattr(ncid, varid,"coordinates","time yv xv");
@@ -1481,7 +1481,7 @@ static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, 
      if ((retval = nc_def_var(ncid,"tauB_y",NC_DOUBLE,2,dimidtwo,&varid)))
        ERR(retval); 
      nc_addattr(ncid, varid,"long_name","Bed stress y-component, cell-centered from u_edge");
-     nc_addattr(ncid, varid,"units","N m-2");
+     nc_addattr(ncid, varid,"units","m2 s-2");
      nc_addattr(ncid, varid,"mesh","suntans_mesh");
      nc_addattr(ncid, varid,"location","face");
      nc_addattr(ncid, varid,"coordinates","time yv xv");   
@@ -1489,7 +1489,7 @@ static void InitialiseOutputNCugridMerge(propT *prop, physT *phys, gridT *grid, 
      if ((retval = nc_def_var(ncid,"tauB",NC_DOUBLE,2,(int[]){dimid_time,dimid_Ne},&varid)))
        ERR(retval); 
      nc_addattr(ncid, varid,"long_name","Bed stress edge-centered");
-     nc_addattr(ncid, varid,"units","N m-2");
+     nc_addattr(ncid, varid,"units","m2 s-2");
      nc_addattr(ncid, varid,"mesh","suntans_mesh");
      nc_addattr(ncid, varid,"location","edge");
      nc_addattr(ncid, varid,"coordinates","time ye xe");   
