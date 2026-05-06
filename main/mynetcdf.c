@@ -10,6 +10,18 @@
 #include "sediments.h"
 #include "turbulence.h" 
 
+
+/***********************************************
+* Check if netcdf build has logging enabled, disable nc_set_log_level if so
+***********************************************/
+#if !defined(NC_HAS_LOGGING) || (NC_HAS_LOGGING == 0)
+    #ifdef nc_set_log_level
+        #undef nc_set_log_level
+    #endif
+    #define nc_set_log_level(x) ((void)0)
+#endif
+
+
 /***********************************************
 * Private functions
 ***********************************************/
